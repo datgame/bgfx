@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2016 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx/blob/master/LICENSE
  */
 
@@ -11,7 +11,7 @@
 // necessary to use this header in conjunction with creating windows.
 
 #include <bx/platform.h>
-#include <bgfx/bgfx.h>
+#include "bgfx.h"
 
 namespace bgfx
 {
@@ -25,6 +25,7 @@ namespace bgfx
 		{
 			NoContext,
 			Render,
+			Timeout,
 			Exiting,
 
 			Count

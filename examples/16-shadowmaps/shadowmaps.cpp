@@ -38,31 +38,6 @@
 #define RENDERVIEW_DRAWDEPTH_2_ID 18
 #define RENDERVIEW_DRAWDEPTH_3_ID 19
 
-uint32_t packUint32(uint8_t _x, uint8_t _y, uint8_t _z, uint8_t _w)
-{
-	union
-	{
-		uint32_t ui32;
-		uint8_t arr[4];
-	} un;
-
-	un.arr[0] = _x;
-	un.arr[1] = _y;
-	un.arr[2] = _z;
-	un.arr[3] = _w;
-
-	return un.ui32;
-}
-
-uint32_t packF4u(float _x, float _y = 0.0f, float _z = 0.0f, float _w = 0.0f)
-{
-	const uint8_t xx = uint8_t(_x*127.0f + 128.0f);
-	const uint8_t yy = uint8_t(_y*127.0f + 128.0f);
-	const uint8_t zz = uint8_t(_z*127.0f + 128.0f);
-	const uint8_t ww = uint8_t(_w*127.0f + 128.0f);
-	return packUint32(xx, yy, zz, ww);
-}
-
 struct LightType
 {
 	enum Enum
@@ -200,18 +175,18 @@ struct PosNormalTexcoordVertex
 static const float s_texcoord = 5.0f;
 static PosNormalTexcoordVertex s_hplaneVertices[] =
 {
-	{ -1.0f, 0.0f,  1.0f, packF4u(0.0f, 1.0f, 0.0f), s_texcoord, s_texcoord },
-	{  1.0f, 0.0f,  1.0f, packF4u(0.0f, 1.0f, 0.0f), s_texcoord, 0.0f       },
-	{ -1.0f, 0.0f, -1.0f, packF4u(0.0f, 1.0f, 0.0f), 0.0f,       s_texcoord },
-	{  1.0f, 0.0f, -1.0f, packF4u(0.0f, 1.0f, 0.0f), 0.0f,       0.0f       },
+	{ -1.0f, 0.0f,  1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f), s_texcoord, s_texcoord },
+	{  1.0f, 0.0f,  1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f), s_texcoord, 0.0f       },
+	{ -1.0f, 0.0f, -1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f), 0.0f,       s_texcoord },
+	{  1.0f, 0.0f, -1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f), 0.0f,       0.0f       },
 };
 
 static PosNormalTexcoordVertex s_vplaneVertices[] =
 {
-	{ -1.0f,  1.0f, 0.0f, packF4u(0.0f, 0.0f, -1.0f), 1.0f, 1.0f },
-	{  1.0f,  1.0f, 0.0f, packF4u(0.0f, 0.0f, -1.0f), 1.0f, 0.0f },
-	{ -1.0f, -1.0f, 0.0f, packF4u(0.0f, 0.0f, -1.0f), 0.0f, 1.0f },
-	{  1.0f, -1.0f, 0.0f, packF4u(0.0f, 0.0f, -1.0f), 0.0f, 0.0f },
+	{ -1.0f,  1.0f, 0.0f, encodeNormalRgba8(0.0f, 0.0f, -1.0f), 1.0f, 1.0f },
+	{  1.0f,  1.0f, 0.0f, encodeNormalRgba8(0.0f, 0.0f, -1.0f), 1.0f, 0.0f },
+	{ -1.0f, -1.0f, 0.0f, encodeNormalRgba8(0.0f, 0.0f, -1.0f), 0.0f, 1.0f },
+	{  1.0f, -1.0f, 0.0f, encodeNormalRgba8(0.0f, 0.0f, -1.0f), 0.0f, 0.0f },
 };
 
 static const uint16_t s_planeIndices[] =
@@ -257,12 +232,12 @@ void mtxYawPitchRoll(float* __restrict _result
 		            , float _roll
 		            )
 {
-	float sroll  = sinf(_roll);
-	float croll  = cosf(_roll);
-	float spitch = sinf(_pitch);
-	float cpitch = cosf(_pitch);
-	float syaw   = sinf(_yaw);
-	float cyaw   = cosf(_yaw);
+	float sroll  = bx::fsin(_roll);
+	float croll  = bx::fcos(_roll);
+	float spitch = bx::fsin(_pitch);
+	float cpitch = bx::fcos(_pitch);
+	float syaw   = bx::fsin(_yaw);
+	float cyaw   = bx::fcos(_yaw);
 
 	_result[ 0] = sroll * spitch * syaw + croll * cyaw;
 	_result[ 1] = sroll * cpitch;
@@ -1057,7 +1032,7 @@ bgfx::VertexDecl PosColorTexCoord0Vertex::ms_decl;
 
 void screenSpaceQuad(float _textureWidth, float _textureHeight, bool _originBottomLeft = true, float _width = 1.0f, float _height = 1.0f)
 {
-	if (bgfx::checkAvailTransientVertexBuffer(3, PosColorTexCoord0Vertex::ms_decl) )
+	if (3 == bgfx::getAvailTransientVertexBuffer(3, PosColorTexCoord0Vertex::ms_decl) )
 	{
 		bgfx::TransientVertexBuffer vb;
 		bgfx::allocTransientVertexBuffer(&vb, 3, PosColorTexCoord0Vertex::ms_decl);
@@ -1163,7 +1138,7 @@ void splitFrustum(float* _splits, uint8_t _numSplits, float _near, float _far, f
 	{
 		float si = float(int8_t(ff) ) / numSlicesf;
 
-		const float nearp = l*(_near*powf(ratio, si) ) + (1 - l)*(_near + (_far - _near)*si);
+		const float nearp = l*(_near*bx::fpow(ratio, si) ) + (1 - l)*(_near + (_far - _near)*si);
 		_splits[nn] = nearp;          //near
 		_splits[ff] = nearp * 1.005f; //far from previous split
 	}
@@ -1956,9 +1931,9 @@ int _main_(int _argc, char** _argv)
 	const float camAspect  = float(int32_t(viewState.m_width) ) / float(int32_t(viewState.m_height) );
 	const float camNear    = 0.1f;
 	const float camFar     = 2000.0f;
-	const float projHeight = 1.0f/tanf(bx::toRad(camFovy)*0.5f);
+	const float projHeight = 1.0f/bx::ftan(bx::toRad(camFovy)*0.5f);
 	const float projWidth  = projHeight * camAspect;
-	bx::mtxProj(viewState.m_proj, camFovy, camAspect, camNear, camFar);
+	bx::mtxProj(viewState.m_proj, camFovy, camAspect, camNear, camFar, bgfx::getCaps()->homogeneousDepth);
 	cameraGetViewMtx(viewState.m_view);
 
 	float timeAccumulatorLight = 0.0f;
@@ -2169,16 +2144,16 @@ int _main_(int _argc, char** _argv)
 		if (settings.m_updateScene)  { timeAccumulatorScene += deltaTime; }
 
 		// Setup lights.
-		pointLight.m_position.m_x = cosf(timeAccumulatorLight) * 20.0f;
+		pointLight.m_position.m_x = bx::fcos(timeAccumulatorLight) * 20.0f;
 		pointLight.m_position.m_y = 26.0f;
-		pointLight.m_position.m_z = sinf(timeAccumulatorLight) * 20.0f;
+		pointLight.m_position.m_z = bx::fsin(timeAccumulatorLight) * 20.0f;
 		pointLight.m_spotDirectionInner.m_x = -pointLight.m_position.m_x;
 		pointLight.m_spotDirectionInner.m_y = -pointLight.m_position.m_y;
 		pointLight.m_spotDirectionInner.m_z = -pointLight.m_position.m_z;
 
-		directionalLight.m_position.m_x = -cosf(timeAccumulatorLight);
+		directionalLight.m_position.m_x = -bx::fcos(timeAccumulatorLight);
 		directionalLight.m_position.m_y = -1.0f;
-		directionalLight.m_position.m_z = -sinf(timeAccumulatorLight);
+		directionalLight.m_position.m_z = -bx::fsin(timeAccumulatorLight);
 
 		// Setup instance matrices.
 		float mtxFloor[16];
@@ -2245,9 +2220,9 @@ int _main_(int _argc, char** _argv)
 				, 0.0f
 				, float(ii)
 				, 0.0f
-				, sinf(float(ii)*2.0f*bx::pi/float(numTrees) ) * 60.0f
+				, bx::fsin(float(ii)*2.0f*bx::pi/float(numTrees) ) * 60.0f
 				, 0.0f
-				, cosf(float(ii)*2.0f*bx::pi/float(numTrees) ) * 60.0f
+				, bx::fcos(float(ii)*2.0f*bx::pi/float(numTrees) ) * 60.0f
 				);
 		}
 
@@ -2294,7 +2269,7 @@ int _main_(int _argc, char** _argv)
 			{
 				const float fovx = 143.98570868f + 3.51f + settings.m_fovXAdjust;
 				const float fovy = 125.26438968f + 9.85f + settings.m_fovYAdjust;
-				const float aspect = tanf(bx::toRad(fovx*0.5f) )/tanf(bx::toRad(fovy*0.5f) );
+				const float aspect = bx::ftan(bx::toRad(fovx*0.5f) )/bx::ftan(bx::toRad(fovy*0.5f) );
 
 				bx::mtxProj(lightProj[ProjType::Vertical]
 						, fovx
@@ -2318,7 +2293,7 @@ int _main_(int _argc, char** _argv)
 
 			const float fovx = 143.98570868f + 7.8f + settings.m_fovXAdjust;
 			const float fovy = 125.26438968f + 3.0f + settings.m_fovYAdjust;
-			const float aspect = tanf(bx::toRad(fovx*0.5f) )/tanf(bx::toRad(fovy*0.5f) );
+			const float aspect = bx::ftan(bx::toRad(fovx*0.5f) )/bx::ftan(bx::toRad(fovy*0.5f) );
 
 			bx::mtxProj(lightProj[ProjType::Horizontal], fovy, aspect, currentSmSettings->m_near, currentSmSettings->m_far);
 
@@ -2344,7 +2319,7 @@ int _main_(int _argc, char** _argv)
 
 				bx::mtxTranspose(mtxYpr[ii], mtxTmp);
 
-				memcpy(lightView[ii], mtxYpr[ii], 12*sizeof(float) );
+				bx::memCopy(lightView[ii], mtxYpr[ii], 12*sizeof(float) );
 				lightView[ii][12] = tmp[0];
 				lightView[ii][13] = tmp[1];
 				lightView[ii][14] = tmp[2];
@@ -2423,8 +2398,8 @@ int _main_(int _argc, char** _argv)
 				if (settings.m_stabilize)
 				{
 					const float quantizer = 64.0f;
-					scalex = quantizer / ceilf(quantizer / scalex);
-					scaley = quantizer / ceilf(quantizer / scaley);
+					scalex = quantizer / bx::fceil(quantizer / scalex);
+					scaley = quantizer / bx::fceil(quantizer / scaley);
 				}
 
 				offsetx = 0.5f * (maxproj[0] + minproj[0]) * scalex;
@@ -2433,8 +2408,8 @@ int _main_(int _argc, char** _argv)
 				if (settings.m_stabilize)
 				{
 					const float halfSize = currentShadowMapSizef * 0.5f;
-					offsetx = ceilf(offsetx * halfSize) / halfSize;
-					offsety = ceilf(offsety * halfSize) / halfSize;
+					offsetx = bx::fceil(offsetx * halfSize) / halfSize;
+					offsety = bx::fceil(offsety * halfSize) / halfSize;
 				}
 
 				float mtxCrop[16];
@@ -2691,7 +2666,7 @@ int _main_(int _argc, char** _argv)
 			// Craft stencil mask for point light shadow map packing.
 			if(LightType::PointLight == settings.m_lightType && settings.m_stencilPack)
 			{
-				if (bgfx::checkAvailTransientVertexBuffer(6, posDecl) )
+				if (6 == bgfx::getAvailTransientVertexBuffer(6, posDecl) )
 				{
 					struct Pos
 					{

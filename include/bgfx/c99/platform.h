@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2016 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx/blob/master/LICENSE
  *
  * vim: set tabstop=4 expandtab:
@@ -13,12 +13,13 @@
 // necessary to use this header in conjunction with creating windows.
 
 #include <bx/platform.h>
-#include <bgfx/c99/bgfx.h>
+#include "bgfx.h"
 
 typedef enum bgfx_render_frame
 {
     BGFX_RENDER_FRAME_NO_CONTEXT,
     BGFX_RENDER_FRAME_RENDER,
+    BGFX_RENDER_FRAME_TIMEOUT,
     BGFX_RENDER_FRAME_EXITING,
 
     BGFX_RENDER_FRAME_COUNT
@@ -80,8 +81,6 @@ typedef struct bgfx_interface_vtbl
     uint16_t (*weld_vertices)(uint16_t* _output, const bgfx_vertex_decl_t* _decl, const void* _data, uint16_t _num, float _epsilon);
     uint32_t (*topology_convert)(bgfx_topology_convert_t _conversion, void* _dst, uint32_t _dstSize, const void* _indices, uint32_t _numIndices, bool _index32);
     void (*topology_sort_tri_list)(bgfx_topology_sort_t _sort, void* _dst, uint32_t _dstSize, const float _dir[3], const float _pos[3], const void* _vertices, uint32_t _stride, const void* _indices, uint32_t _numIndices, bool _index32);
-    void (*image_swizzle_bgra8)(uint32_t _width, uint32_t _height, uint32_t _pitch, const void* _src, void* _dst);
-    void (*image_rgba8_downsample_2x2)(uint32_t _width, uint32_t _height, uint32_t _pitch, const void* _src, void* _dst);
     uint8_t (*get_supported_renderers)(uint8_t _max, bgfx_renderer_type_t* _enum);
     const char* (*get_renderer_name)(bgfx_renderer_type_t _type);
     bool (*init)(bgfx_renderer_type_t _type, uint16_t _vendorId, uint16_t _deviceId, bgfx_callback_interface_t* _callback, bgfx_allocator_interface_t* _allocator);
@@ -113,10 +112,9 @@ typedef struct bgfx_interface_vtbl
     bgfx_dynamic_vertex_buffer_handle_t (*create_dynamic_vertex_buffer_mem)(const bgfx_memory_t* _mem, const bgfx_vertex_decl_t* _decl, uint16_t _flags);
     void (*update_dynamic_vertex_buffer)(bgfx_dynamic_vertex_buffer_handle_t _handle, uint32_t _startVertex, const bgfx_memory_t* _mem);
     void (*destroy_dynamic_vertex_buffer)(bgfx_dynamic_vertex_buffer_handle_t _handle);
-    bool (*check_avail_transient_index_buffer)(uint32_t _num);
-    bool (*check_avail_transient_vertex_buffer)(uint32_t _num, const bgfx_vertex_decl_t* _decl);
-    bool (*check_avail_instance_data_buffer)(uint32_t _num, uint16_t _stride);
-    bool (*check_avail_transient_buffers)(uint32_t _numVertices, const bgfx_vertex_decl_t* _decl, uint32_t _numIndices);
+    uint32_t (*get_avail_transient_index_buffer)(uint32_t _num);
+    uint32_t (*get_avail_transient_vertex_buffer)(uint32_t _num, const bgfx_vertex_decl_t* _decl);
+    uint32_t (*get_avail_instance_data_buffer)(uint32_t _num, uint16_t _stride);
     void (*alloc_transient_index_buffer)(bgfx_transient_index_buffer_t* _tib, uint32_t _num);
     void (*alloc_transient_vertex_buffer)(bgfx_transient_vertex_buffer_t* _tvb, uint32_t _num, const bgfx_vertex_decl_t* _decl);
     bool (*alloc_transient_buffers)(bgfx_transient_vertex_buffer_t* _tvb, const bgfx_vertex_decl_t* _decl, uint32_t _numVertices, bgfx_transient_index_buffer_t* _tib, uint32_t _numIndices);
@@ -151,7 +149,7 @@ typedef struct bgfx_interface_vtbl
     void (*get_uniform_info)(bgfx_uniform_handle_t _handle, bgfx_uniform_info_t* _info);
     void (*destroy_uniform)(bgfx_uniform_handle_t _handle);
     bgfx_occlusion_query_handle_t (*create_occlusion_query)();
-    bgfx_occlusion_query_result_t (*get_result)(bgfx_occlusion_query_handle_t _handle);
+    bgfx_occlusion_query_result_t (*get_result)(bgfx_occlusion_query_handle_t _handle, int32_t* _result);
     void (*destroy_occlusion_query)(bgfx_occlusion_query_handle_t _handle);
     void (*set_palette_color)(uint8_t _index, const float _rgba[4]);
     void (*set_view_name)(uint8_t _id, const char* _name);
@@ -198,7 +196,7 @@ typedef struct bgfx_interface_vtbl
     uint32_t (*dispatch_indirect)(uint8_t _id, bgfx_program_handle_t _handle, bgfx_indirect_buffer_handle_t _indirectHandle, uint16_t _start, uint16_t _num, uint8_t _flags);
     void (*discard)();
     void (*blit)(uint8_t _id, bgfx_texture_handle_t _dst, uint8_t _dstMip, uint16_t _dstX, uint16_t _dstY, uint16_t _dstZ, bgfx_texture_handle_t _src, uint8_t _srcMip, uint16_t _srcX, uint16_t _srcY, uint16_t _srcZ, uint16_t _width, uint16_t _height, uint16_t _depth);
-    void (*save_screen_shot)(const char* _filePath);
+    void (*request_screen_shot)(bgfx_frame_buffer_handle_t _handle, const char* _filePath);
 
 } bgfx_interface_vtbl_t;
 

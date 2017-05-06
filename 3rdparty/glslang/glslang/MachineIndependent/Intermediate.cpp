@@ -1,13 +1,13 @@
 //
-//Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
-//Copyright (C) 2012-2015 LunarG, Inc.
-//Copyright (C) 2015-2016 Google, Inc.
+// Copyright (C) 2002-2005  3Dlabs Inc. Ltd.
+// Copyright (C) 2012-2015 LunarG, Inc.
+// Copyright (C) 2015-2016 Google, Inc.
 //
-//All rights reserved.
+// All rights reserved.
 //
-//Redistribution and use in source and binary forms, with or without
-//modification, are permitted provided that the following conditions
-//are met:
+// Redistribution and use in source and binary forms, with or without
+// modification, are permitted provided that the following conditions
+// are met:
 //
 //    Redistributions of source code must retain the above copyright
 //    notice, this list of conditions and the following disclaimer.
@@ -21,18 +21,18 @@
 //    contributors may be used to endorse or promote products derived
 //    from this software without specific prior written permission.
 //
-//THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-//"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-//LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
-//FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
-//COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
-//INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
-//BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
-//LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-//CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
-//LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
-//ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
-//POSSIBILITY OF SUCH DAMAGE.
+// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS
+// FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE
+// COPYRIGHT HOLDERS OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT,
+// INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING,
+// BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+// LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+// CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT
+// LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN
+// ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+// POSSIBILITY OF SUCH DAMAGE.
 //
 
 //
@@ -45,6 +45,7 @@
 #include "propagateNoContraction.h"
 
 #include <cfloat>
+#include <utility>
 
 namespace glslang {
 
@@ -114,7 +115,7 @@ TIntermTyped* TIntermediate::addBinaryMath(TOperator op, TIntermTyped* left, TIn
 {
     // No operations work on blocks
     if (left->getType().getBasicType() == EbtBlock || right->getType().getBasicType() == EbtBlock)
-        return 0;
+        return nullptr;
 
     // Try converting the children's base types to compatible types.
     TIntermTyped* child = addConversion(op, left->getType(), right);
@@ -125,12 +126,13 @@ TIntermTyped* TIntermediate::addBinaryMath(TOperator op, TIntermTyped* left, TIn
         if (child)
             left = child;
         else
-            return 0;
+            return nullptr;
     }
 
     // Convert the children's type shape to be compatible.
-    right = addShapeConversion(op,  left->getType(), right);
-    left  = addShapeConversion(op, right->getType(),  left);
+    addBiShapeConversion(op, left, right);
+    if (left == nullptr || right == nullptr)
+        return nullptr;
 
     //
     // Need a new node holding things together.  Make
@@ -154,14 +156,10 @@ TIntermTyped* TIntermediate::addBinaryMath(TOperator op, TIntermTyped* left, TIn
             return folded;
     }
 
-    // If either is a specialization constant, while the other is 
-    // a constant (or specialization constant), the result is still
-    // a specialization constant, if the operation is an allowed
-    // specialization-constant operation.
-    if (( left->getType().getQualifier().isSpecConstant() && right->getType().getQualifier().isConstant()) ||
-        (right->getType().getQualifier().isSpecConstant() &&  left->getType().getQualifier().isConstant()))
-        if (isSpecializationOperation(*node))
-            node->getWritableType().getQualifier().makeSpecConstant();
+    // If can propagate spec-constantness and if the operation is an allowed
+    // specialization-constant operation, make a spec-constant.
+    if (specConstantPropagates(*left, *right) && isSpecializationOperation(*node))
+        node->getWritableType().getQualifier().makeSpecConstant();
 
     return node;
 }
@@ -191,7 +189,7 @@ TIntermBinary* TIntermediate::addBinaryNode(TOperator op, TIntermTyped* left, TI
     node->setType(type);
     return node;
 }
-    
+
 //
 // Low level: add unary node (no promotions or other argument modifications)
 //
@@ -241,7 +239,7 @@ TIntermTyped* TIntermediate::addAssign(TOperator op, TIntermTyped* left, TInterm
         return nullptr;
 
     // convert shape
-    right = addShapeConversion(op, left->getType(), right);
+    right = addUniShapeConversion(op, left->getType(), right);
 
     // build the node
     TIntermBinary* node = addBinaryNode(op, left, right, loc);
@@ -275,19 +273,19 @@ TIntermTyped* TIntermediate::addIndex(TOperator op, TIntermTyped* base, TIntermT
 TIntermTyped* TIntermediate::addUnaryMath(TOperator op, TIntermTyped* child, TSourceLoc loc)
 {
     if (child == 0)
-        return 0;
+        return nullptr;
 
     if (child->getType().getBasicType() == EbtBlock)
-        return 0;
+        return nullptr;
 
     switch (op) {
     case EOpLogicalNot:
         if (source == EShSourceHlsl) {
             break; // HLSL can promote logical not
         }
- 
+
         if (child->getType().getBasicType() != EbtBool || child->getType().isMatrix() || child->getType().isArray() || child->getType().isVector()) {
-            return 0;
+            return nullptr;
         }
         break;
 
@@ -297,7 +295,7 @@ TIntermTyped* TIntermediate::addUnaryMath(TOperator op, TIntermTyped* child, TSo
     case EOpPreDecrement:
     case EOpNegative:
         if (child->getType().getBasicType() == EbtStruct || child->getType().isArray())
-            return 0;
+            return nullptr;
     default: break; // some compilers want this
     }
 
@@ -325,8 +323,8 @@ TIntermTyped* TIntermediate::addUnaryMath(TOperator op, TIntermTyped* child, TSo
                                                                child->getMatrixRows(),
                                                                child->isVector()),
                               child);
-        if (child == 0)
-            return 0;
+        if (child == nullptr)
+            return nullptr;
     }
 
     //
@@ -359,12 +357,12 @@ TIntermTyped* TIntermediate::addUnaryMath(TOperator op, TIntermTyped* child, TSo
     node->updatePrecision();
 
     // If it's a (non-specialization) constant, it must be folded.
-    if (child->getAsConstantUnion())
-        return child->getAsConstantUnion()->fold(op, node->getType());
+    if (node->getOperand()->getAsConstantUnion())
+        return node->getOperand()->getAsConstantUnion()->fold(op, node->getType());
 
     // If it's a specialization constant, the result is too,
     // if the operation is allowed for specialization constants.
-    if (child->getType().getQualifier().isSpecConstant() && isSpecializationOperation(*node))
+    if (node->getOperand()->getType().getQualifier().isSpecConstant() && isSpecializationOperation(*node))
         node->getWritableType().getQualifier().makeSpecConstant();
 
     return node;
@@ -379,8 +377,8 @@ TIntermTyped* TIntermediate::addBuiltInFunctionCall(const TSourceLoc& loc, TOper
         // including constness (which would differ from the prototype).
         //
         TIntermTyped* child = childNode->getAsTyped();
-        if (child == 0)
-            return 0;
+        if (child == nullptr)
+            return nullptr;
 
         if (child->getAsConstantUnion()) {
             TIntermTyped* folded = child->getAsConstantUnion()->fold(op, returnType);
@@ -416,7 +414,7 @@ TIntermTyped* TIntermediate::setAggregateOperator(TIntermNode* node, TOperator o
     //
     if (node) {
         aggNode = node->getAsAggregate();
-        if (aggNode == 0 || aggNode->getOp() != EOpNull) {
+        if (aggNode == nullptr || aggNode->getOp() != EOpNull) {
             //
             // Make an aggregate containing this node.
             //
@@ -451,7 +449,7 @@ TIntermTyped* TIntermediate::setAggregateOperator(TIntermNode* node, TOperator o
 // Generally, this is focused on basic type conversion, not shape conversion.
 // See addShapeConversion().
 //
-// Return 0 if a conversion can't be done.
+// Return nullptr if a conversion can't be done.
 //
 TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TIntermTyped* node) const
 {
@@ -460,7 +458,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
     //
     switch (node->getBasicType()) {
     case EbtVoid:
-        return 0;
+        return nullptr;
     case EbtAtomicUint:
     case EbtSampler:
         // opaque types can be passed to functions
@@ -473,12 +471,12 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
 
         // samplers can get assigned via a sampler constructor
         // (well, not yet, but code in the rest of this function is ready for it)
-        if (node->getBasicType() == EbtSampler && op == EOpAssign && 
+        if (node->getBasicType() == EbtSampler && op == EOpAssign &&
             node->getAsOperator() != nullptr && node->getAsOperator()->getOp() == EOpConstructTextureSampler)
             break;
 
         // otherwise, opaque types can't even be operated on, let alone converted
-        return 0;
+        return nullptr;
     default:
         break;
     }
@@ -489,11 +487,11 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
 
     // If one's a structure, then no conversions.
     if (type.isStruct() || node->isStruct())
-        return 0;
+        return nullptr;
 
     // If one's an array, then no conversions.
     if (type.isArray() || node->getType().isArray())
-        return 0;
+        return nullptr;
 
     // Note: callers are responsible for other aspects of shape,
     // like vector and matrix sizes.
@@ -575,6 +573,27 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
     case EOpDivAssign:
     case EOpModAssign:
 
+    case EOpAtan:
+    case EOpClamp:
+    case EOpCross:
+    case EOpDistance:
+    case EOpDot:
+    case EOpDst:
+    case EOpFaceForward:
+    case EOpFma:
+    case EOpFrexp:
+    case EOpLdexp:
+    case EOpMix:
+    case EOpLit:
+    case EOpMax:
+    case EOpMin:
+    case EOpModf:
+    case EOpPow:
+    case EOpReflect:
+    case EOpRefract:
+    case EOpSmoothStep:
+    case EOpStep:
+
     case EOpSequence:
     case EOpConstructStruct:
 
@@ -584,7 +603,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         if (canImplicitlyPromote(node->getType().getBasicType(), type.getBasicType(), op))
             promoteTo = type.getBasicType();
         else
-            return 0;
+            return nullptr;
 
         break;
 
@@ -605,8 +624,11 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
              node->getType().getBasicType() == EbtUint64))
 
             return node;
-        else
-            return 0;
+        else if (source == EShSourceHlsl && node->getType().getBasicType() == EbtBool) {
+            promoteTo = type.getBasicType();
+            break;
+        } else
+            return nullptr;
 
     default:
         // default is to require a match; all exceptions should have case statements above
@@ -614,7 +636,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         if (type.getBasicType() == node->getType().getBasicType())
             return node;
         else
-            return 0;
+            return nullptr;
     }
 
     if (node->getAsConstantUnion())
@@ -623,7 +645,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
     //
     // Add a new newNode for the conversion.
     //
-    TIntermUnary* newNode = 0;
+    TIntermUnary* newNode = nullptr;
 
     TOperator newOp = EOpNull;
 
@@ -642,7 +664,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         case EbtInt64: newOp = EOpConvInt64ToDouble; break;
         case EbtUint64: newOp = EOpConvUint64ToDouble; break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
     case EbtFloat:
@@ -657,7 +679,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         case EbtInt64:  newOp = EOpConvInt64ToFloat;  break;
         case EbtUint64: newOp = EOpConvUint64ToFloat; break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
 #ifdef AMD_EXTENSIONS
@@ -671,7 +693,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         case EbtInt64:  newOp = EOpConvInt64ToFloat16;  break;
         case EbtUint64: newOp = EOpConvUint64ToFloat16; break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
 #endif
@@ -687,7 +709,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         case EbtInt64:  newOp = EOpConvInt64ToBool;  break;
         case EbtUint64: newOp = EOpConvUint64ToBool; break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
     case EbtInt:
@@ -702,7 +724,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         case EbtInt64:  newOp = EOpConvInt64ToInt;  break;
         case EbtUint64: newOp = EOpConvUint64ToInt; break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
     case EbtUint:
@@ -717,7 +739,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
         case EbtInt64:  newOp = EOpConvInt64ToUint;  break;
         case EbtUint64: newOp = EOpConvUint64ToUint; break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
     case EbtInt64:
@@ -732,7 +754,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
 #endif
         case EbtUint64: newOp = EOpConvUint64ToInt64; break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
     case EbtUint64:
@@ -747,11 +769,11 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
 #endif
         case EbtInt64:  newOp = EOpConvInt64ToUint64;  break;
         default:
-            return 0;
+            return nullptr;
         }
         break;
     default:
-        return 0;
+        return nullptr;
     }
 
     TType newType(promoteTo, EvqTemporary, node->getVectorSize(), node->getMatrixCols(), node->getMatrixRows());
@@ -767,7 +789,10 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
 }
 
 // Convert the node's shape of type for the given type, as allowed by the
-// operation involved: 'op'.
+// operation involved: 'op'.  This is for situations where there is only one
+// direction to consider doing the shape conversion.
+//
+// This implements policy, it call addShapeConversion() for the mechanism.
 //
 // Generally, the AST represents allowed GLSL shapes, so this isn't needed
 // for GLSL.  Bad shapes are caught in conversion or promotion.
@@ -775,7 +800,7 @@ TIntermTyped* TIntermediate::addConversion(TOperator op, const TType& type, TInt
 // Return 'node' if no conversion was done. Promotion handles final shape
 // checking.
 //
-TIntermTyped* TIntermediate::addShapeConversion(TOperator op, const TType& type, TIntermTyped* node)
+TIntermTyped* TIntermediate::addUniShapeConversion(TOperator op, const TType& type, TIntermTyped* node)
 {
     // some source languages don't do this
     switch (source) {
@@ -788,22 +813,141 @@ TIntermTyped* TIntermediate::addShapeConversion(TOperator op, const TType& type,
 
     // some operations don't do this
     switch (op) {
+    case EOpFunctionCall:
+    case EOpReturn:
+        break;
+
+    case EOpMulAssign:
+        // want to support vector *= scalar native ops in AST and lower, not smear, similarly for
+        // matrix *= scalar, etc.
+
+    case EOpAddAssign:
+    case EOpSubAssign:
+    case EOpDivAssign:
+    case EOpAndAssign:
+    case EOpInclusiveOrAssign:
+    case EOpExclusiveOrAssign:
+    case EOpRightShiftAssign:
+    case EOpLeftShiftAssign:
+        if (node->getVectorSize() == 1)
+            return node;
+        break;
+
     case EOpAssign:
+        break;
+
+    case EOpMix:
+        break;
+
+    default:
+        return node;
+    }
+
+    return addShapeConversion(type, node);
+}
+
+// Convert the nodes' shapes to be compatible for the operation 'op'.
+//
+// This implements policy, it call addShapeConversion() for the mechanism.
+//
+// Generally, the AST represents allowed GLSL shapes, so this isn't needed
+// for GLSL.  Bad shapes are caught in conversion or promotion.
+//
+void TIntermediate::addBiShapeConversion(TOperator op, TIntermTyped*& lhsNode, TIntermTyped*& rhsNode)
+{
+    // some source languages don't do this
+    switch (source) {
+    case EShSourceHlsl:
+        break;
+    case EShSourceGlsl:
+    default:
+        return;
+    }
+
+    // some operations don't do this
+    // 'break' will mean attempt bidirectional conversion
+    switch (op) {
+    case EOpMulAssign:
+    case EOpAssign:
+    case EOpAddAssign:
+    case EOpSubAssign:
+    case EOpDivAssign:
+    case EOpAndAssign:
+    case EOpInclusiveOrAssign:
+    case EOpExclusiveOrAssign:
+    case EOpRightShiftAssign:
+    case EOpLeftShiftAssign:
+        // switch to unidirectional conversion (the lhs can't change)
+        rhsNode = addUniShapeConversion(op, lhsNode->getType(), rhsNode);
+        return;
+
+    case EOpAdd:
+    case EOpSub:
+    case EOpMul:
+    case EOpDiv:
+        // want to support vector * scalar native ops in AST and lower, not smear, similarly for
+        // matrix * vector, etc.
+        if (lhsNode->getVectorSize() == 1 || rhsNode->getVectorSize() == 1)
+            return;
+        break;
+
+    case EOpRightShift:
+    case EOpLeftShift:
+        // can natively support the right operand being a scalar and the left a vector,
+        // but not the reverse
+        if (rhsNode->getVectorSize() == 1)
+            return;
+        break;
+
     case EOpLessThan:
     case EOpGreaterThan:
     case EOpLessThanEqual:
     case EOpGreaterThanEqual:
+
     case EOpEqual:
     case EOpNotEqual:
-    case EOpFunctionCall:
-    case EOpReturn:
+
     case EOpLogicalAnd:
     case EOpLogicalOr:
     case EOpLogicalXor:
+
+    case EOpAnd:
+    case EOpInclusiveOr:
+    case EOpExclusiveOr:
+
+    case EOpMix:
         break;
+
     default:
-        return node;
+        return;
     }
+
+    // Do bidirectional conversions
+    if (lhsNode->getType().isScalarOrVec1() || rhsNode->getType().isScalarOrVec1()) {
+        if (lhsNode->getType().isScalarOrVec1())
+            lhsNode = addShapeConversion(rhsNode->getType(), lhsNode);
+        else
+            rhsNode = addShapeConversion(lhsNode->getType(), rhsNode);
+    }
+    lhsNode = addShapeConversion(rhsNode->getType(), lhsNode);
+    rhsNode = addShapeConversion(lhsNode->getType(), rhsNode);
+}
+
+// Convert the node's shape of type for the given type. It's not necessarily
+// an error if they are different and not converted, as some operations accept
+// mixed types.  Promotion will do final shape checking.
+//
+// If there is a chance of two nodes, with conversions possible in each direction,
+// the policy for what to ask for must be in the caller; this will do what is asked.
+//
+// Return 'node' if no conversion was done. Promotion handles final shape
+// checking.
+//
+TIntermTyped* TIntermediate::addShapeConversion(const TType& type, TIntermTyped* node)
+{
+    // no conversion needed
+    if (node->getType() == type)
+        return node;
 
     // structures and arrays don't change shape, either to or from
     if (node->getType().isStruct() || node->getType().isArray() ||
@@ -813,12 +957,12 @@ TIntermTyped* TIntermediate::addShapeConversion(TOperator op, const TType& type,
     // The new node that handles the conversion
     TOperator constructorOp = mapTypeToConstructorOp(type);
 
-    // scalar -> smeared -> vector, or
-    // vec1 -> scalar, or
-    // bigger vector -> smaller vector or scalar
-    if ((type.isVector() && node->getType().isScalar()) ||
-        (node->getType().isVector() && node->getVectorSize() == 1 && type.isScalar()) ||
-        (node->getVectorSize() > type.getVectorSize() && type.isVector()))
+    // scalar -> vector or vec1 -> vector or
+    // vector -> scalar or
+    // bigger vector -> smaller vector
+    if ((node->getType().isScalarOrVec1() && type.isVector()) ||
+        (node->getType().isVector() && type.isScalar()) ||
+        (node->isVector() && type.isVector() && node->getVectorSize() > type.getVectorSize()))
         return setAggregateOperator(makeAggregate(node), constructorOp, type, node->getLoc());
 
     return node;
@@ -833,6 +977,9 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
     if (profile == EEsProfile || version == 110)
         return false;
 
+    if (from == to)
+        return true;
+
     // TODO: Move more policies into language-specific handlers.
     // Some languages allow more general (or potentially, more specific) conversions under some conditions.
     if (source == EShSourceHlsl) {
@@ -842,22 +989,23 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
         if (fromConvertable && toConvertable) {
             switch (op) {
             case EOpAndAssign:               // assignments can perform arbitrary conversions
-            case EOpInclusiveOrAssign:       // ... 
-            case EOpExclusiveOrAssign:       // ... 
-            case EOpAssign:                  // ... 
-            case EOpAddAssign:               // ... 
-            case EOpSubAssign:               // ... 
-            case EOpMulAssign:               // ... 
-            case EOpVectorTimesScalarAssign: // ... 
-            case EOpMatrixTimesScalarAssign: // ... 
-            case EOpDivAssign:               // ... 
-            case EOpModAssign:               // ... 
+            case EOpInclusiveOrAssign:       // ...
+            case EOpExclusiveOrAssign:       // ...
+            case EOpAssign:                  // ...
+            case EOpAddAssign:               // ...
+            case EOpSubAssign:               // ...
+            case EOpMulAssign:               // ...
+            case EOpVectorTimesScalarAssign: // ...
+            case EOpMatrixTimesScalarAssign: // ...
+            case EOpDivAssign:               // ...
+            case EOpModAssign:               // ...
             case EOpReturn:                  // function returns can also perform arbitrary conversions
             case EOpFunctionCall:            // conversion of a calling parameter
             case EOpLogicalNot:
             case EOpLogicalAnd:
             case EOpLogicalOr:
             case EOpLogicalXor:
+            case EOpConstructStruct:
                 return true;
             default:
                 break;
@@ -898,9 +1046,11 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
     case EbtUint:
         switch (from) {
         case EbtInt:
-            return version >= 400;
+            return version >= 400 || (source == EShSourceHlsl);
         case EbtUint:
             return true;
+        case EbtBool:
+            return (source == EShSourceHlsl);
         default:
             return false;
         }
@@ -908,6 +1058,8 @@ bool TIntermediate::canImplicitlyPromote(TBasicType from, TBasicType to, TOperat
         switch (from) {
         case EbtInt:
             return true;
+        case EbtBool:
+            return (source == EShSourceHlsl);
         default:
             return false;
         }
@@ -1123,24 +1275,24 @@ TOperator TIntermediate::mapTypeToConstructorOp(const TType& type) const
 // Safe way to combine two nodes into an aggregate.  Works with null pointers,
 // a node that's not a aggregate yet, etc.
 //
-// Returns the resulting aggregate, unless 0 was passed in for
+// Returns the resulting aggregate, unless nullptr was passed in for
 // both existing nodes.
 //
 TIntermAggregate* TIntermediate::growAggregate(TIntermNode* left, TIntermNode* right)
 {
-    if (left == 0 && right == 0)
-        return 0;
+    if (left == nullptr && right == nullptr)
+        return nullptr;
 
-    TIntermAggregate* aggNode = 0;
-    if (left)
+    TIntermAggregate* aggNode = nullptr;
+    if (left != nullptr)
         aggNode = left->getAsAggregate();
-    if (! aggNode || aggNode->getOp() != EOpNull) {
+    if (aggNode == nullptr || aggNode->getOp() != EOpNull) {
         aggNode = new TIntermAggregate;
-        if (left)
+        if (left != nullptr)
             aggNode->getSequence().push_back(left);
     }
 
-    if (right)
+    if (right != nullptr)
         aggNode->getSequence().push_back(right);
 
     return aggNode;
@@ -1158,12 +1310,12 @@ TIntermAggregate* TIntermediate::growAggregate(TIntermNode* left, TIntermNode* r
 //
 // Turn an existing node into an aggregate.
 //
-// Returns an aggregate, unless 0 was passed in for the existing node.
+// Returns an aggregate, unless nullptr was passed in for the existing node.
 //
 TIntermAggregate* TIntermediate::makeAggregate(TIntermNode* node)
 {
-    if (node == 0)
-        return 0;
+    if (node == nullptr)
+        return nullptr;
 
     TIntermAggregate* aggNode = new TIntermAggregate;
     aggNode->getSequence().push_back(node);
@@ -1174,11 +1326,22 @@ TIntermAggregate* TIntermediate::makeAggregate(TIntermNode* node)
 
 TIntermAggregate* TIntermediate::makeAggregate(TIntermNode* node, const TSourceLoc& loc)
 {
-    if (node == 0)
-        return 0;
+    if (node == nullptr)
+        return nullptr;
 
     TIntermAggregate* aggNode = new TIntermAggregate;
     aggNode->getSequence().push_back(node);
+    aggNode->setLoc(loc);
+
+    return aggNode;
+}
+
+//
+// Make an aggregate with an empty sequence.
+//
+TIntermAggregate* TIntermediate::makeAggregate(const TSourceLoc& loc)
+{
+    TIntermAggregate* aggNode = new TIntermAggregate;
     aggNode->setLoc(loc);
 
     return aggNode;
@@ -1191,7 +1354,7 @@ TIntermAggregate* TIntermediate::makeAggregate(TIntermNode* node, const TSourceL
 //
 // Returns the selection node created.
 //
-TIntermNode* TIntermediate::addSelection(TIntermTyped* cond, TIntermNodePair nodePair, const TSourceLoc& loc)
+TIntermTyped* TIntermediate::addSelection(TIntermTyped* cond, TIntermNodePair nodePair, const TSourceLoc& loc)
 {
     //
     // Don't prune the false path for compile-time constants; it's needed
@@ -1204,13 +1367,12 @@ TIntermNode* TIntermediate::addSelection(TIntermTyped* cond, TIntermNodePair nod
     return node;
 }
 
-
 TIntermTyped* TIntermediate::addComma(TIntermTyped* left, TIntermTyped* right, const TSourceLoc& loc)
 {
     // However, the lowest precedence operators of the sequence operator ( , ) and the assignment operators
     // ... are not included in the operators that can create a constant expression.
     //
-    //if (left->getType().getQualifier().storage == EvqConst &&
+    // if (left->getType().getQualifier().storage == EvqConst &&
     //    right->getType().getQualifier().storage == EvqConst) {
 
     //    return right;
@@ -1235,12 +1397,22 @@ TIntermTyped* TIntermediate::addMethod(TIntermTyped* object, const TType& type, 
 //
 // For "?:" test nodes.  There are three children; a condition,
 // a true path, and a false path.  The two paths are specified
-// as separate parameters.
+// as separate parameters. For vector 'cond', the true and false
+// are not paths, but vectors to mix.
 //
-// Returns the selection node created, or 0 if one could not be.
+// Specialization constant operations include
+//     - The ternary operator ( ? : )
+//
+// Returns the selection node created, or nullptr if one could not be.
 //
 TIntermTyped* TIntermediate::addSelection(TIntermTyped* cond, TIntermTyped* trueBlock, TIntermTyped* falseBlock, const TSourceLoc& loc)
 {
+    // If it's void, go to the if-then-else selection()
+    if (trueBlock->getBasicType() == EbtVoid && falseBlock->getBasicType() == EbtVoid) {
+        TIntermNodePair pair = { trueBlock, falseBlock };
+        return addSelection(cond, pair, loc);
+    }
+
     //
     // Get compatible types.
     //
@@ -1252,17 +1424,42 @@ TIntermTyped* TIntermediate::addSelection(TIntermTyped* cond, TIntermTyped* true
         if (child)
             trueBlock = child;
         else
-            return 0;
+            return nullptr;
     }
+
+    // Handle a vector condition as a mix
+    if (!cond->getType().isScalarOrVec1()) {
+        TType targetVectorType(trueBlock->getType().getBasicType(), EvqTemporary,
+                               cond->getType().getVectorSize());
+        // smear true/false operands as needed
+        trueBlock = addUniShapeConversion(EOpMix, targetVectorType, trueBlock);
+        falseBlock = addUniShapeConversion(EOpMix, targetVectorType, falseBlock);
+
+        // After conversion, types have to match.
+        if (falseBlock->getType() != trueBlock->getType())
+            return nullptr;
+
+        // make the mix operation
+        TIntermAggregate* mix = makeAggregate(loc);
+        mix = growAggregate(mix, falseBlock);
+        mix = growAggregate(mix, trueBlock);
+        mix = growAggregate(mix, cond);
+        mix->setType(targetVectorType);
+        mix->setOp(EOpMix);
+
+        return mix;
+    }
+
+    // Now have a scalar condition...
+
+    // Convert true and false expressions to matching types
+    addBiShapeConversion(EOpMix, trueBlock, falseBlock);
 
     // After conversion, types have to match.
     if (falseBlock->getType() != trueBlock->getType())
-        return 0;
+        return nullptr;
 
-    //
-    // See if all the operands are constant, then fold it otherwise not.
-    //
-
+    // Eliminate the selection when the condition is a scalar and all operands are constant.
     if (cond->getAsConstantUnion() && trueBlock->getAsConstantUnion() && falseBlock->getAsConstantUnion()) {
         if (cond->getAsConstantUnion()->getConstArray()[0].getBConst())
             return trueBlock;
@@ -1274,9 +1471,15 @@ TIntermTyped* TIntermediate::addSelection(TIntermTyped* cond, TIntermTyped* true
     // Make a selection node.
     //
     TIntermSelection* node = new TIntermSelection(cond, trueBlock, falseBlock, trueBlock->getType());
-    node->getQualifier().makeTemporary();
     node->setLoc(loc);
     node->getQualifier().precision = std::max(trueBlock->getQualifier().precision, falseBlock->getQualifier().precision);
+
+    if ((cond->getQualifier().isConstant() && specConstantPropagates(*trueBlock, *falseBlock)) ||
+        (cond->getQualifier().isSpecConstant() && trueBlock->getQualifier().isConstant() &&
+                                                 falseBlock->getQualifier().isConstant()))
+        node->getQualifier().makeSpecConstant();
+    else
+        node->getQualifier().makeTemporary();
 
     return node;
 }
@@ -1352,18 +1555,43 @@ TIntermConstantUnion* TIntermediate::addConstantUnion(double d, TBasicType baseT
     return addConstantUnion(unionArray, TType(baseType, EvqConst), loc, literal);
 }
 
-TIntermTyped* TIntermediate::addSwizzle(TVectorFields& fields, const TSourceLoc& loc)
+TIntermConstantUnion* TIntermediate::addConstantUnion(const TString* s, const TSourceLoc& loc, bool literal) const
+{
+    TConstUnionArray unionArray(1);
+    unionArray[0].setSConst(s);
+
+    return addConstantUnion(unionArray, TType(EbtString, EvqConst), loc, literal);
+}
+
+// Put vector swizzle selectors onto the given sequence
+void TIntermediate::pushSelector(TIntermSequence& sequence, const TVectorSelector& selector, const TSourceLoc& loc)
+{
+    TIntermConstantUnion* constIntNode = addConstantUnion(selector, loc);
+    sequence.push_back(constIntNode);
+}
+
+// Put matrix swizzle selectors onto the given sequence
+void TIntermediate::pushSelector(TIntermSequence& sequence, const TMatrixSelector& selector, const TSourceLoc& loc)
+{
+    TIntermConstantUnion* constIntNode = addConstantUnion(selector.coord1, loc);
+    sequence.push_back(constIntNode);
+    constIntNode = addConstantUnion(selector.coord2, loc);
+    sequence.push_back(constIntNode);
+}
+
+// Make an aggregate node that has a sequence of all selectors.
+template TIntermTyped* TIntermediate::addSwizzle<TVectorSelector>(TSwizzleSelectors<TVectorSelector>& selector, const TSourceLoc& loc);
+template TIntermTyped* TIntermediate::addSwizzle<TMatrixSelector>(TSwizzleSelectors<TMatrixSelector>& selector, const TSourceLoc& loc);
+template<typename selectorType>
+TIntermTyped* TIntermediate::addSwizzle(TSwizzleSelectors<selectorType>& selector, const TSourceLoc& loc)
 {
     TIntermAggregate* node = new TIntermAggregate(EOpSequence);
 
     node->setLoc(loc);
-    TIntermConstantUnion* constIntNode;
     TIntermSequence &sequenceVector = node->getSequence();
 
-    for (int i = 0; i < fields.num; i++) {
-        constIntNode = addConstantUnion(fields.offsets[i], loc);
-        sequenceVector.push_back(constIntNode);
-    }
+    for (int i = 0; i < selector.size(); i++)
+        pushSelector(sequenceVector, selector[i], loc);
 
     return node;
 }
@@ -1385,10 +1613,10 @@ const TIntermTyped* TIntermediate::findLValueBase(const TIntermTyped* node, bool
         if (binary == nullptr)
             return node;
         TOperator op = binary->getOp();
-        if (op != EOpIndexDirect && op != EOpIndexIndirect && op != EOpIndexDirectStruct && op != EOpVectorSwizzle)
+        if (op != EOpIndexDirect && op != EOpIndexIndirect && op != EOpIndexDirectStruct && op != EOpVectorSwizzle && op != EOpMatrixSwizzle)
             return nullptr;
         if (! swizzleOkay) {
-            if (op == EOpVectorSwizzle)
+            if (op == EOpVectorSwizzle || op == EOpMatrixSwizzle)
                 return nullptr;
             if ((op == EOpIndexDirect || op == EOpIndexIndirect) &&
                 (binary->getLeft()->getType().isVector() || binary->getLeft()->getType().isScalar()) &&
@@ -1402,10 +1630,11 @@ const TIntermTyped* TIntermediate::findLValueBase(const TIntermTyped* node, bool
 //
 // Create while and do-while loop nodes.
 //
-TIntermLoop* TIntermediate::addLoop(TIntermNode* body, TIntermTyped* test, TIntermTyped* terminal, bool testFirst, const TSourceLoc& loc)
+TIntermLoop* TIntermediate::addLoop(TIntermNode* body, TIntermTyped* test, TIntermTyped* terminal, bool testFirst, const TSourceLoc& loc, TLoopControl control)
 {
     TIntermLoop* node = new TIntermLoop(body, test, terminal, testFirst);
     node->setLoc(loc);
+    node->setLoopControl(control);
 
     return node;
 }
@@ -1413,10 +1642,11 @@ TIntermLoop* TIntermediate::addLoop(TIntermNode* body, TIntermTyped* test, TInte
 //
 // Create a for-loop sequence.
 //
-TIntermAggregate* TIntermediate::addForLoop(TIntermNode* body, TIntermNode* initializer, TIntermTyped* test, TIntermTyped* terminal, bool testFirst, const TSourceLoc& loc)
+TIntermAggregate* TIntermediate::addForLoop(TIntermNode* body, TIntermNode* initializer, TIntermTyped* test, TIntermTyped* terminal, bool testFirst, const TSourceLoc& loc, TLoopControl control)
 {
     TIntermLoop* node = new TIntermLoop(body, test, terminal, testFirst);
     node->setLoc(loc);
+    node->setLoopControl(control);
 
     // make a sequence of the initializer and statement
     TIntermAggregate* loopSequence = makeAggregate(initializer, loc);
@@ -1431,7 +1661,7 @@ TIntermAggregate* TIntermediate::addForLoop(TIntermNode* body, TIntermNode* init
 //
 TIntermBranch* TIntermediate::addBranch(TOperator branchOp, const TSourceLoc& loc)
 {
-    return addBranch(branchOp, 0, loc);
+    return addBranch(branchOp, nullptr, loc);
 }
 
 TIntermBranch* TIntermediate::addBranch(TOperator branchOp, TIntermTyped* expression, const TSourceLoc& loc)
@@ -1448,7 +1678,7 @@ TIntermBranch* TIntermediate::addBranch(TOperator branchOp, TIntermTyped* expres
 //
 bool TIntermediate::postProcess(TIntermNode* root, EShLanguage /*language*/)
 {
-    if (root == 0)
+    if (root == nullptr)
         return true;
 
     // Finish off the top-level sequence
@@ -1479,7 +1709,7 @@ void TIntermediate::addSymbolLinkageNodes(TIntermAggregate*& linkage, EShLanguag
     //  - ftransform() can make gl_Vertex and gl_ModelViewProjectionMatrix active.
     //
 
-    //if (ftransformUsed) {
+    // if (ftransformUsed) {
         // TODO: 1.1 lowering functionality: track ftransform() usage
     //    addSymbolLinkageNode(root, symbolTable, "gl_Vertex");
     //    addSymbolLinkageNode(root, symbolTable, "gl_ModelViewProjectionMatrix");
@@ -1747,6 +1977,9 @@ bool TIntermediate::promote(TIntermOperator* node)
     if (node->getAsBinaryNode())
         return promoteBinary(*node->getAsBinaryNode());
 
+    if (node->getAsAggregate())
+        return promoteAggregate(*node->getAsAggregate());
+
     return false;
 }
 
@@ -1888,6 +2121,42 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
     // We now have only scalars, vectors, and matrices to worry about.
     //
 
+    // HLSL implicitly promotes bool -> int for numeric operations.
+    // (Implicit conversions to make the operands match each other's types were already done.)
+    if (getSource() == EShSourceHlsl &&
+        (left->getBasicType() == EbtBool || right->getBasicType() == EbtBool)) {
+        switch (op) {
+        case EOpLessThan:
+        case EOpGreaterThan:
+        case EOpLessThanEqual:
+        case EOpGreaterThanEqual:
+
+        case EOpRightShift:
+        case EOpLeftShift:
+
+        case EOpMod:
+
+        case EOpAnd:
+        case EOpInclusiveOr:
+        case EOpExclusiveOr:
+
+        case EOpAdd:
+        case EOpSub:
+        case EOpDiv:
+        case EOpMul:
+            left = addConversion(op, TType(EbtInt, EvqTemporary, left->getVectorSize()), left);
+            right = addConversion(op, TType(EbtInt, EvqTemporary, right->getVectorSize()), right);
+            if (left == nullptr || right == nullptr)
+                return false;
+            node.setLeft(left);
+            node.setRight(right);
+            break;
+
+        default:
+            break;
+        }
+    }
+
     // Do general type checks against individual operands (comparing left and right is coming up, checking mixed shapes after that)
     switch (op) {
     case EOpLessThan:
@@ -2000,8 +2269,6 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
     case EOpLogicalXor:
         return left->getType() == right->getType();
 
-    // no shifts: they can mix types (scalar int can shift a vector uint, etc.)
-
     case EOpMod:
     case EOpModAssign:
 
@@ -2015,6 +2282,7 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
     case EOpAdd:
     case EOpSub:
     case EOpDiv:
+
     case EOpAddAssign:
     case EOpSubAssign:
     case EOpDivAssign:
@@ -2039,7 +2307,7 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
         return true;
 
     // Finish handling the case, for all ops, where there are two vectors of different sizes
-    if (left->isVector() && right->isVector() && left->getVectorSize() != right->getVectorSize())
+    if (left->isVector() && right->isVector() && left->getVectorSize() != right->getVectorSize() && right->getVectorSize() > 1)
         return false;
 
     //
@@ -2188,6 +2456,76 @@ bool TIntermediate::promoteBinary(TIntermBinary& node)
     }
 
     return true;
+}
+
+//
+// See TIntermediate::promote
+//
+bool TIntermediate::promoteAggregate(TIntermAggregate& node)
+{
+    TOperator op = node.getOp();
+    TIntermSequence& args = node.getSequence();
+    const int numArgs = static_cast<int>(args.size());
+
+    // Presently, only hlsl does intrinsic promotions.
+    if (getSource() != EShSourceHlsl)
+        return true;
+
+    // set of opcodes that can be promoted in this manner.
+    switch (op) {
+    case EOpAtan:
+    case EOpClamp:
+    case EOpCross:
+    case EOpDistance:
+    case EOpDot:
+    case EOpDst:
+    case EOpFaceForward:
+    // case EOpFindMSB: TODO:
+    // case EOpFindLSB: TODO:
+    case EOpFma:
+    case EOpMod:
+    case EOpFrexp:
+    case EOpLdexp:
+    case EOpMix:
+    case EOpLit:
+    case EOpMax:
+    case EOpMin:
+    case EOpModf:
+    // case EOpGenMul: TODO:
+    case EOpPow:
+    case EOpReflect:
+    case EOpRefract:
+    // case EOpSinCos: TODO:
+    case EOpSmoothStep:
+    case EOpStep:
+        break;
+    default:
+        return true;
+    }
+
+    // TODO: array and struct behavior
+
+    // Try converting all nodes to the given node's type
+    TIntermSequence convertedArgs(numArgs, nullptr);
+
+    // Try to convert all types to the nonConvArg type.
+    for (int nonConvArg = 0; nonConvArg < numArgs; ++nonConvArg) {
+        // Try converting all args to this arg's type
+        for (int convArg = 0; convArg < numArgs; ++convArg) {
+            convertedArgs[convArg] = addConversion(op, args[nonConvArg]->getAsTyped()->getType(),
+                                                   args[convArg]->getAsTyped());
+        }
+
+        // If we successfully converted all the args, use the result.
+        if (std::all_of(convertedArgs.begin(), convertedArgs.end(),
+                        [](const TIntermNode* node) { return node != nullptr; })) {
+
+            std::swap(args, convertedArgs);
+            return true;
+        }
+    }
+
+    return false;
 }
 
 void TIntermBinary::updatePrecision()
@@ -2507,6 +2845,15 @@ void TIntermAggregate::addToPragmaTable(const TPragmaTable& pTable)
     assert(!pragmaTable);
     pragmaTable = new TPragmaTable();
     *pragmaTable = pTable;
+}
+
+// If either node is a specialization constant, while the other is
+// a constant (or specialization constant), the result is still
+// a specialization constant.
+bool TIntermediate::specConstantPropagates(const TIntermTyped& node1, const TIntermTyped& node2)
+{
+    return (node1.getType().getQualifier().isSpecConstant() && node2.getType().getQualifier().isConstant()) ||
+           (node2.getType().getQualifier().isSpecConstant() && node1.getType().getQualifier().isConstant());
 }
 
 } // end namespace glslang

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2016 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -9,8 +9,6 @@
 
 #include <bgfx/platform.h>
 
-#include <stdio.h>
-#include <string.h>
 #include <pthread.h>
 #include <string>
 
@@ -190,7 +188,7 @@ using namespace entry;
 
 PP_EXPORT const void* PPP_GetInterface(const char* _name)
 {
-	if (0 == strcmp(_name, PPP_INSTANCE_INTERFACE) )
+	if (0 == bx::strCmp(_name, PPP_INSTANCE_INTERFACE) )
 	{
 		static PPP_Instance instanceInterface =
 		{

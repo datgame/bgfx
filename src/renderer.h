@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2016 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -10,6 +10,37 @@
 
 namespace bgfx
 {
+	struct BlitState
+	{
+		BlitState(const Frame* _frame)
+			: m_frame(_frame)
+			, m_item(0)
+		{
+			m_key.decode(_frame->m_blitKeys[0]);
+		}
+
+		bool hasItem(uint16_t _view) const
+		{
+			return m_item < m_frame->m_numBlitItems
+				&& m_key.m_view <= _view
+				;
+		}
+
+		const BlitItem& advance()
+		{
+			const BlitItem& bi = m_frame->m_blitItem[m_item];
+
+			++m_item;
+			m_key.decode(m_frame->m_blitKeys[m_item]);
+
+			return bi;
+		}
+
+		const Frame* m_frame;
+		BlitKey  m_key;
+		uint16_t m_item;
+	};
+
 	struct ViewState
 	{
 		ViewState()
@@ -57,7 +88,7 @@ namespace bgfx
 						}
 						else
 						{
-							memcpy(&m_view[0][ii].un.f4x4, &_frame->m_view[ii].un.f4x4, sizeof(Matrix4) );
+							bx::memCopy(&m_view[0][ii].un.f4x4, &_frame->m_view[ii].un.f4x4, sizeof(Matrix4) );
 						}
 					}
 				}
@@ -76,7 +107,7 @@ namespace bgfx
 		}
 
 		template<uint16_t mtxRegs, typename RendererContext, typename Program, typename Draw>
-		void setPredefined(RendererContext* _renderer, uint16_t _view, uint8_t _eye, Program& _program, Frame* _frame, const Draw& _draw)
+		void setPredefined(RendererContext* _renderer, uint16_t _view, uint8_t _eye, Program& _program, const Frame* _frame, const Draw& _draw)
 		{
 			for (uint32_t ii = 0, num = _program.m_numPredefined; ii < num; ++ii)
 			{
@@ -283,7 +314,7 @@ namespace bgfx
 	class StateCacheLru
 	{
 	public:
-		void add(uint64_t _key, Ty _value, uint16_t _parent)
+		Ty* add(uint64_t _key, const Ty& _value, uint16_t _parent)
 		{
 			uint16_t handle = m_alloc.alloc();
 			if (UINT16_MAX == handle)
@@ -300,6 +331,8 @@ namespace bgfx
 			data.m_value  = _value;
 			data.m_parent = _parent;
 			m_hashMap.insert(stl::make_pair(_key, handle) );
+
+			return &m_data[handle].m_value;
 		}
 
 		Ty* find(uint64_t _key)

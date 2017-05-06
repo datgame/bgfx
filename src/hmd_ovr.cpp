@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2016 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -104,7 +104,7 @@ namespace bgfx
 		for (int eye = 0; eye < 2; ++eye)
 		{
 			BX_STATIC_ASSERT(sizeof(_desc->m_eyeFov[eye]) == sizeof(hmdDesc.DefaultEyeFov[eye]));
-			memcpy(&_desc->m_eyeFov[eye], &hmdDesc.DefaultEyeFov[eye], sizeof(_desc->m_eyeFov[eye]));
+			bx::memCopy(&_desc->m_eyeFov[eye], &hmdDesc.DefaultEyeFov[eye], sizeof(_desc->m_eyeFov[eye]));
 			_desc->m_eyeSize[eye].m_w = eyeSize[eye].w;
 			_desc->m_eyeSize[eye].m_h = eyeSize[eye].h;
 		}

@@ -1,6 +1,6 @@
 /*
- * Copyright 2011-2015 Branimir Karadzic. All rights reserved.
- * License: http://www.opensource.org/licenses/BSD-2-Clause
+ * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #include "common.h"
@@ -11,6 +11,19 @@
 #include "camera.h"
 
 #include <bx/uint32_t.h>
+
+void imageCheckerboard(void* _dst, uint32_t _width, uint32_t _height, uint32_t _step, uint32_t _0, uint32_t _1)
+{
+	uint32_t* dst = (uint32_t*)_dst;
+	for (uint32_t yy = 0; yy < _height; ++yy)
+	{
+		for (uint32_t xx = 0; xx < _width; ++xx)
+		{
+			uint32_t abgr = ( (xx/_step)&1) ^ ( (yy/_step)&1) ? _1 : _0;
+			*dst++ = abgr;
+		}
+	}
+}
 
 class DebugDrawApp : public entry::AppI
 {
@@ -46,10 +59,17 @@ class DebugDrawApp : public entry::AppI
 		cameraSetVerticalAngle(0.0f);
 
 		ddInit();
+
+		uint8_t data[32*32*4];
+		imageCheckerboard(data, 32, 32, 4, 0xff808080, 0xffc0c0c0);
+
+		m_sprite = ddCreateSprite(32, 32, data);
 	}
 
 	virtual int shutdown() BX_OVERRIDE
 	{
+		ddDestroy(m_sprite);
+
 		ddShutdown();
 
 		cameraDestroy();
@@ -98,10 +118,10 @@ class DebugDrawApp : public entry::AppI
 			}
 			else
 			{
-				bx::mtxProj(proj, 60.0f, float(m_width)/float(m_height), 0.1f, 100.0f);
+				bx::mtxProj(proj, 60.0f, float(m_width)/float(m_height), 0.1f, 100.0f, bgfx::getCaps()->homogeneousDepth);
 
 				bgfx::setViewTransform(0, view, proj);
-				bgfx::setViewRect(0, 0, 0, m_width, m_height);
+				bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height) );
 			}
 
 			float zero[3] = {};
@@ -109,7 +129,7 @@ class DebugDrawApp : public entry::AppI
 			float mvp[16];
 			float eye[] = { 5.0f, 10.0f, 5.0f };
 			bx::mtxLookAt(view, eye, zero);
-			bx::mtxProj(proj, 45.0f, float(m_width)/float(m_height), 1.0f, 15.0f);
+			bx::mtxProj(proj, 45.0f, float(m_width)/float(m_height), 1.0f, 15.0f, bgfx::getCaps()->homogeneousDepth);
 			bx::mtxMul(mvp, view, proj);
 
 			ddBegin(0);
@@ -181,7 +201,7 @@ class DebugDrawApp : public entry::AppI
 				ddPop();
 
 				ddSetSpin(time);
-				ddDrawQuad(normal, center, 2.0f);
+				ddDrawQuad(m_sprite, normal, center, 2.0f);
 			}
 			ddPop();
 
@@ -256,6 +276,7 @@ class DebugDrawApp : public entry::AppI
 	}
 
 	entry::MouseState m_mouseState;
+	SpriteHandle m_sprite;
 
 	int64_t m_timeOffset;
 

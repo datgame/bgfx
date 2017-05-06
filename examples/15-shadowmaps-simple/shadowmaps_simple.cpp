@@ -19,31 +19,6 @@
 #define RENDER_SHADOW_PASS_ID 0
 #define RENDER_SCENE_PASS_ID  1
 
-uint32_t packUint32(uint8_t _x, uint8_t _y, uint8_t _z, uint8_t _w)
-{
-	union
-	{
-		uint32_t ui32;
-		uint8_t arr[4];
-	} un;
-
-	un.arr[0] = _x;
-	un.arr[1] = _y;
-	un.arr[2] = _z;
-	un.arr[3] = _w;
-
-	return un.ui32;
-}
-
-uint32_t packF4u(float _x, float _y = 0.0f, float _z = 0.0f, float _w = 0.0f)
-{
-	const uint8_t xx = uint8_t(_x*127.0f + 128.0f);
-	const uint8_t yy = uint8_t(_y*127.0f + 128.0f);
-	const uint8_t zz = uint8_t(_z*127.0f + 128.0f);
-	const uint8_t ww = uint8_t(_w*127.0f + 128.0f);
-	return packUint32(xx, yy, zz, ww);
-}
-
 struct PosNormalVertex
 {
 	float    m_x;
@@ -54,10 +29,10 @@ struct PosNormalVertex
 
 static PosNormalVertex s_hplaneVertices[] =
 {
-	{ -1.0f, 0.0f,  1.0f, packF4u(0.0f, 1.0f, 0.0f) },
-	{  1.0f, 0.0f,  1.0f, packF4u(0.0f, 1.0f, 0.0f) },
-	{ -1.0f, 0.0f, -1.0f, packF4u(0.0f, 1.0f, 0.0f) },
-	{  1.0f, 0.0f, -1.0f, packF4u(0.0f, 1.0f, 0.0f) },
+	{ -1.0f, 0.0f,  1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f) },
+	{  1.0f, 0.0f,  1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f) },
+	{ -1.0f, 0.0f, -1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f) },
+	{  1.0f, 0.0f, -1.0f, encodeNormalRgba8(0.0f, 1.0f, 0.0f) },
 };
 
 static const uint16_t s_planeIndices[] =
@@ -200,7 +175,7 @@ int _main_(int _argc, char** _argv)
 	bx::mtxLookAt(view, eye, at);
 
 	const float aspect = float(int32_t(width) ) / float(int32_t(height) );
-	bx::mtxProj(proj, 60.0f, aspect, 0.1f, 1000.0f, flipV);
+	bx::mtxProj(proj, 60.0f, aspect, 0.1f, 1000.0f, bgfx::getCaps()->homogeneousDepth);
 
 	// Time acumulators.
 	float timeAccumulatorLight = 0.0f;
@@ -230,9 +205,9 @@ int _main_(int _argc, char** _argv)
 
 		// Setup lights.
 		float lightPos[4];
-		lightPos[0] = -cosf(timeAccumulatorLight);
+		lightPos[0] = -bx::fcos(timeAccumulatorLight);
 		lightPos[1] = -1.0f;
-		lightPos[2] = -sinf(timeAccumulatorLight);
+		lightPos[2] = -bx::fsin(timeAccumulatorLight);
 		lightPos[3] = 0.0f;
 
 		bgfx::setUniform(u_lightPos, lightPos);
@@ -287,7 +262,7 @@ int _main_(int _argc, char** _argv)
 		bgfx::setViewFrameBuffer(RENDER_SHADOW_PASS_ID, shadowMapFB);
 		bgfx::setViewTransform(RENDER_SHADOW_PASS_ID, lightView, lightProj);
 
-		bgfx::setViewRect(RENDER_SCENE_PASS_ID, 0, 0, width, height);
+		bgfx::setViewRect(RENDER_SCENE_PASS_ID, 0, 0, uint16_t(width), uint16_t(height) );
 		bgfx::setViewTransform(RENDER_SCENE_PASS_ID, view, proj);
 
 		// Clear backbuffer and shadowmap framebuffer at beginning.

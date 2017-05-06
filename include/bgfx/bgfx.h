@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2016 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx/blob/master/LICENSE
  */
 
@@ -10,7 +10,7 @@
 #include <stdint.h> // uint32_t
 #include <stdlib.h> // NULL
 
-#include <bgfx/defines.h>
+#include "defines.h"
 
 #if defined(BX_PLATFORM_WINDOWS)
 #   define BGFX_SHARED_LIB_API __declspec(dllexport)
@@ -229,7 +229,7 @@ namespace bgfx
 			RGBA4,
 			RGB5A1,
 			RGB10A2,
-			R11G11B10F,
+			RG11B10F,
 
 			UnknownDepth, // Depth formats below.
 
@@ -698,16 +698,16 @@ namespace bgfx
 			float translation[3];       //!< Eye translation.
 			float fov[4];               //!< Field of view (up, down, left, right).
 			float viewOffset[3];        //!< Eye view matrix translation adjustment.
-			float projection[16];       //!< Eye projection matrix
+			float projection[16];       //!< Eye projection matrix.
 			float pixelsPerTanAngle[2]; //!< Number of pixels that fit in tan(angle) = 1.
 		};
 
 		Eye eye[2];
-		uint16_t width;        //!< Framebuffer width.
-		uint16_t height;       //!< Framebuffer width.
-		uint32_t deviceWidth;  //!< Device resolution width
-		uint32_t deviceHeight; //!< Device resolution height
-		uint8_t flags;         //!< Status flags
+		uint16_t width;        //!< Frame buffer width.
+		uint16_t height;       //!< Frame buffer height.
+		uint32_t deviceWidth;  //!< Device resolution width.
+		uint32_t deviceHeight; //!< Device resolution height.
+		uint8_t  flags;        //!< Status flags.
 	};
 
 	/// Renderer statistics data.
@@ -716,22 +716,26 @@ namespace bgfx
 	///
 	struct Stats
 	{
-		uint64_t cpuTimeBegin; //!< CPU frame begin time.
-		uint64_t cpuTimeEnd;   //!< CPU frame end time.
-		uint64_t cpuTimerFreq; //!< CPU timer frequency.
+		uint64_t cpuTimeBegin;  //!< CPU frame begin time.
+		uint64_t cpuTimeEnd;    //!< CPU frame end time.
+		uint64_t cpuTimerFreq;  //!< CPU timer frequency.
 
-		uint64_t gpuTimeBegin; //!< GPU frame begin time.
-		uint64_t gpuTimeEnd;   //!< GPU frame end time.
-		uint64_t gpuTimerFreq; //!< GPU timer frequency.
+		uint64_t gpuTimeBegin;  //!< GPU frame begin time.
+		uint64_t gpuTimeEnd;    //!< GPU frame end time.
+		uint64_t gpuTimerFreq;  //!< GPU timer frequency.
 
-		int64_t waitRender;    //!< Time spent waiting for render backend thread to finish issuing
-		                       //!  draw commands to underlying graphics API.
-		int64_t waitSubmit;    //!< Time spent waiting for submit thread to advance to next frame.
+		int64_t waitRender;     //!< Time spent waiting for render backend thread to finish issuing
+		                        //!  draw commands to underlying graphics API.
+		int64_t waitSubmit;     //!< Time spent waiting for submit thread to advance to next frame.
 
-		uint16_t width;        //!< Backbuffer width in pixels.
-		uint16_t height;       //!< Backbuffer height in pixels.
-		uint16_t textWidth;    //!< Debug text width in characters.
-		uint16_t textHeight;   //!< Debug text height in characters.
+		uint32_t numDraw;       //!< Number of draw calls submitted.
+		uint32_t numCompute;    //!< Number of compute calls submitted.
+		uint32_t maxGpuLatency; //!< GPU driver latency.
+
+		uint16_t width;         //!< Backbuffer width in pixels.
+		uint16_t height;        //!< Backbuffer height in pixels.
+		uint16_t textWidth;     //!< Debug text width in characters.
+		uint16_t textHeight;    //!< Debug text height in characters.
 	};
 
 	/// Vertex declaration.
@@ -896,7 +900,7 @@ BGFX_SHARED_LIB_API
 	/// Convert index buffer for use with different primitive topologies.
 	///
 	/// @param[in] _conversion Conversion type, see `TopologyConvert::Enum`.
-	/// @param[in] _dst Destination index buffer. If this argument it NULL
+	/// @param[in] _dst Destination index buffer. If this argument is NULL
 	///    function will return number of indices after conversion.
 	/// @param[in] _dstSize Destination index buffer in bytes. It must be
 	///    large enough to contain output indices. If destination size is
@@ -950,46 +954,8 @@ BGFX_SHARED_LIB_API
 		, const void* _indices
 		, uint32_t _numIndices
 		, bool _index32
-		);
-
-	/// Swizzle RGBA8 image to BGRA8.
-	///
-	/// @param[in] _width Width of input image (pixels).
-	/// @param[in] _height Height of input image (pixels).
-	/// @param[in] _pitch Pitch of input image (bytes).
-	/// @param[in] _src Source image.
-	/// @param[in] _dst Destination image. Must be the same size as input image.
-	///   _dst might be pointer to the same memory as _src.
-	///
-	/// @attention C99 equivalent is `bgfx_image_swizzle_bgra8`.
-	///
 BGFX_SHARED_LIB_API
-	void imageSwizzleBgra8(
-		  uint32_t _width
-		, uint32_t _height
-		, uint32_t _pitch
-		, const void* _src
-		, void* _dst
-		);
-
-	/// Downsample RGBA8 image with 2x2 pixel average filter.
-	///
-	/// @param[in] _width Width of input image (pixels).
-	/// @param[in] _height Height of input image (pixels).
-	/// @param[in] _pitch Pitch of input image (bytes).
-	/// @param[in] _src Source image.
-	/// @param[in] _dst Destination image. Must be at least quarter size of
-	///   input image. _dst might be pointer to the same memory as _src.
-	///
-	/// @attention C99 equivalent is `bgfx_image_rgba8_downsample_2x2`.
-	///
 BGFX_SHARED_LIB_API
-	void imageRgba8Downsample2x2(
-		  uint32_t _width
-		, uint32_t _height
-		, uint32_t _pitch
-		, const void* _src
-		, void* _dst
 		);
 
 	/// Returns supported backend API renderers.
@@ -1255,6 +1221,8 @@ BGFX_SHARED_LIB_API
 
 	/// Destroy static index buffer.
 	///
+	/// @param[in] _handle Static index buffer handle.
+	///
 	/// @attention C99 equivalent is `bgfx_destroy_index_buffer`.
 	///
 BGFX_SHARED_LIB_API
@@ -1311,6 +1279,7 @@ BGFX_SHARED_LIB_API
 	///       buffers.
 	///   - `BGFX_BUFFER_INDEX32` - Buffer is using 32-bit indices. This flag has effect only on
 	///       index buffers.
+	/// @returns Dynamic index buffer handle.
 	///
 	/// @attention C99 equivalent is `bgfx_create_dynamic_index_buffer`.
 	///
@@ -1335,6 +1304,7 @@ BGFX_SHARED_LIB_API
 	///       buffers.
 	///   - `BGFX_BUFFER_INDEX32` - Buffer is using 32-bit indices. This flag has effect only on
 	///       index buffers.
+	/// @returns Dynamic index buffer handle.
 	///
 	/// @attention C99 equivalent is `bgfx_create_dynamic_index_buffer_mem`.
 	///
@@ -1384,6 +1354,7 @@ BGFX_SHARED_LIB_API
 	///       buffers.
 	///   - `BGFX_BUFFER_INDEX32` - Buffer is using 32-bit indices. This flag has effect only on
 	///       index buffers.
+	/// @returns Dynamic vertex buffer handle.
 	///
 	/// @attention C99 equivalent is `bgfx_create_dynamic_vertex_buffer`.
 	///
@@ -1410,6 +1381,7 @@ BGFX_SHARED_LIB_API
 	///       buffers.
 	///   - `BGFX_BUFFER_INDEX32` - Buffer is using 32-bit indices. This flag has effect only on
 	///       index buffers.
+	/// @returns Dynamic vertex buffer handle.
 	///
 	/// @attention C99 equivalent is `bgfx_create_dynamic_vertex_buffer_mem`.
 	///
@@ -1437,55 +1409,42 @@ BGFX_SHARED_LIB_API
 
 	/// Destroy dynamic vertex buffer.
 	///
+	/// @param[in] _handle Dynamic vertex buffer handle.
+	///
 	/// @attention C99 equivalent is `bgfx_destroy_dynamic_vertex_buffer`.
 	///
 BGFX_SHARED_LIB_API
 	void destroyDynamicVertexBuffer(DynamicVertexBufferHandle _handle);
 
-	/// Returns true if internal transient index buffer has enough space.
+	/// Returns number of available indices.
 	///
-	/// @param[in] _num Number of indices.
+	/// @param[in] _num Number of required indices.
 	///
-	/// @attention C99 equivalent is `bgfx_check_avail_transient_index_buffer`.
+	/// @attention C99 equivalent is `bgfx_get_avail_transient_index_buffer`.
 	///
 BGFX_SHARED_LIB_API
-	bool checkAvailTransientIndexBuffer(uint32_t _num);
+	uint32_t getAvailTransientIndexBuffer(uint32_t _num);
 
-	/// Returns true if internal transient vertex buffer has enough space.
+	/// Returns number of available vertices.
 	///
-	/// @param[in] _num Number of vertices.
+	/// @param[in] _num Number of required vertices.
 	/// @param[in] _decl Vertex declaration.
 	///
 	/// @attention C99 equivalent is `bgfx_check_avail_transient_vertex_buffer`.
 	///
 BGFX_SHARED_LIB_API
-	bool checkAvailTransientVertexBuffer(uint32_t _num, const VertexDecl& _decl);
+	uint32_t getAvailTransientVertexBuffer(uint32_t _num, const VertexDecl& _decl);
 
-	/// Returns true if internal instance data buffer has enough space.
+	/// Returns number of available instance buffer slots.
 	///
-	/// @param[in] _num Number of instances.
+	/// @param[in] _num Number of required instances.
 	/// @param[in] _stride Stride per instance.
 	///
 	/// @attention C99 equivalent is `bgfx_check_avail_instance_data_buffer`.
 	///
 BGFX_SHARED_LIB_API
-	bool checkAvailInstanceDataBuffer(uint32_t _num, uint16_t _stride);
-
-	/// Returns true if both internal transient index and vertex buffer have
-	/// enough space.
-	///
-	/// @param[in] _numVertices Number of vertices.
-	/// @param[in] _decl Vertex declaration.
-	/// @param[in] _numIndices Number of indices.
-	///
-	/// @attention C99 equivalent is `bgfx_check_avail_transient_buffers`.
-	///
+	uint32_t getAvailInstanceDataBuffer(uint32_t _num, uint16_t _stride);
 BGFX_SHARED_LIB_API
-	bool checkAvailTransientBuffers(
-		  uint32_t _numVertices
-		, const VertexDecl& _decl
-		, uint32_t _numIndices
-		);
 
 	/// Allocate transient index buffer.
 	///
@@ -1554,12 +1513,17 @@ BGFX_SHARED_LIB_API
 
 	/// Create draw indirect buffer.
 	///
+	/// @param[in] _num Number of indirect calls.
+	/// @returns Indirect buffer handle.
+	///
 	/// @attention C99 equivalent is `bgfx_create_indirect_buffer`.
 	///
 BGFX_SHARED_LIB_API
 	IndirectBufferHandle createIndirectBuffer(uint32_t _num);
 
 	/// Destroy draw indirect buffer.
+	///
+	/// @param[in] _handle Indirect buffer handle.
 	///
 	/// @attention C99 equivalent is `bgfx_destroy_indirect_buffer`.
 	///
@@ -1724,9 +1688,9 @@ BGFX_SHARED_LIB_API
 	///   - `BGFX_TEXTURE_[MIN/MAG/MIP]_[POINT/ANISOTROPIC]` - Point or anisotropic
 	///     sampling.
 	///
-	/// @param[in] _mem Texture data. If `_mem` is non-NULL, created texture will be immutable.
-	///   When `_numLayers` is more than 1, expected memory layout is texture and all mips together
-	///   for each array element.
+	/// @param[in] _mem Texture data. If `_mem` is non-NULL, created texture will be immutable. If
+	///   `_mem` is NULL content of the texture is uninitialized. When `_numLayers` is more than
+	///   1, expected memory layout is texture and all mips together for each array element.
 	///
 	/// @attention C99 equivalent is `bgfx_create_texture_2d`.
 	///
@@ -1782,7 +1746,8 @@ BGFX_SHARED_LIB_API
 	///   - `BGFX_TEXTURE_[MIN/MAG/MIP]_[POINT/ANISOTROPIC]` - Point or anisotropic
 	///     sampling.
 	///
-	/// @param[in] _mem Texture data. If `_mem` is non-NULL, created texture will be immutable.
+	/// @param[in] _mem Texture data. If `_mem` is non-NULL, created texture will be immutable. If
+	///   `_mem` is NULL content of the texture is uninitialized.
 	///
 	/// @attention C99 equivalent is `bgfx_create_texture_3d`.
 	///
@@ -1811,9 +1776,9 @@ BGFX_SHARED_LIB_API
 	///   - `BGFX_TEXTURE_[MIN/MAG/MIP]_[POINT/ANISOTROPIC]` - Point or anisotropic
 	///     sampling.
 	///
-	/// @param[in] _mem Texture data. If `_mem` is non-NULL, created texture will be immutable.
-	///   When `_numLayers` is more than 1, expected memory layout is cubemap texture and all mips
-	///   together for each array element.
+	/// @param[in] _mem Texture data. If `_mem` is non-NULL, created texture will be immutable. If
+	///   `_mem` is NULL content of the texture is uninitialized. When `_numLayers` is more than
+	///   1, expected memory layout is texture and all mips together for each array element.
 	///
 	/// @attention C99 equivalent is `bgfx_create_texture_cube`.
 	///
@@ -2003,7 +1968,7 @@ BGFX_SHARED_LIB_API
 		, uint32_t _textureFlags = BGFX_TEXTURE_U_CLAMP|BGFX_TEXTURE_V_CLAMP
 		);
 
-	/// Create frame buffer.
+	/// Create MRT frame buffer from texture handles (simple).
 	///
 	/// @param[in] _num Number of texture attachments.
 	/// @param[in] _handles Texture attachments.
@@ -2021,7 +1986,8 @@ BGFX_SHARED_LIB_API
 		, bool _destroyTextures = false
 		);
 
-	/// Create frame buffer.
+	/// Create MRT frame buffer from texture handles with specific layer and
+	/// mip level.
 	///
 	/// @param[in] _num Number of texture attachments.
 	/// @param[in] _attachment Attachment texture info. See: `Attachment`.
@@ -2147,12 +2113,14 @@ BGFX_SHARED_LIB_API
 	/// Retrieve occlusion query result from previous frame.
 	///
 	/// @param[in] _handle Handle to occlusion query object.
+	/// @param[out] _result Number of pixels that passed test. This argument
+	///   can be `NULL` if result of occlusion query is not needed.
 	/// @returns Occlusion query result.
 	///
 	/// @attention C99 equivalent is `bgfx_get_result`.
 	///
 BGFX_SHARED_LIB_API
-	OcclusionQueryResult::Enum getResult(OcclusionQueryHandle _handle);
+	OcclusionQueryResult::Enum getResult(OcclusionQueryHandle _handle, int32_t* _result = NULL);
 
 	/// Destroy occlusion query.
 	///
@@ -2676,9 +2644,6 @@ BGFX_SHARED_LIB_API
 	///   - `BGFX_TEXTURE_[MIN/MAG/MIP]_[POINT/ANISOTROPIC]` - Point or anisotropic
 	///     sampling.
 	///
-	/// @param[in] _flags Texture sampler filtering flags. UINT32_MAX use the
-	///   sampler filtering mode set by texture.
-	///
 	/// @attention C99 equivalent is `bgfx_set_texture`.
 	///
 BGFX_SHARED_LIB_API
@@ -2970,17 +2935,20 @@ BGFX_SHARED_LIB_API
 		, uint16_t _depth = UINT16_MAX
 		);
 
-	/// Request screen shot.
+	/// Request screen shot of window back buffer.
 	///
+	/// @param[in] _handle Frame buffer handle. If handle is `BGFX_INVALID_HANDLE` request will be
+	///   made for main window back buffer.
 	/// @param[in] _filePath Will be passed to `bgfx::CallbackI::screenShot` callback.
 	///
 	/// @remarks
 	///   `bgfx::CallbackI::screenShot` must be implemented.
 	///
-	/// @attention C99 equivalent is `bgfx_save_screen_shot`.
+	/// @attention Frame buffer handle must be created with OS' target native window handle.
+	/// @attention C99 equivalent is `bgfx_request_screen_shot`.
 	///
 BGFX_SHARED_LIB_API
-	void saveScreenShot(const char* _filePath);
+	void requestScreenShot(FrameBufferHandle _handle, const char* _filePath);
 
 } // namespace bgfx
 

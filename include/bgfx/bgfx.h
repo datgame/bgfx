@@ -954,8 +954,6 @@ BGFX_SHARED_LIB_API
 		, const void* _indices
 		, uint32_t _numIndices
 		, bool _index32
-BGFX_SHARED_LIB_API
-BGFX_SHARED_LIB_API
 		);
 
 	/// Returns supported backend API renderers.
@@ -1444,7 +1442,6 @@ BGFX_SHARED_LIB_API
 	///
 BGFX_SHARED_LIB_API
 	uint32_t getAvailInstanceDataBuffer(uint32_t _num, uint16_t _stride);
-BGFX_SHARED_LIB_API
 
 	/// Allocate transient index buffer.
 	///

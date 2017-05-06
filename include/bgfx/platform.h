@@ -60,6 +60,7 @@ namespace bgfx
 	///
 	/// @attention C99 equivalent is `bgfx_set_platform_data`.
 	///
+BGFX_SHARED_LIB_API
 	void setPlatformData(const PlatformData& _data);
 
 	/// Internal data.

@@ -138,11 +138,15 @@ ImguiFontHandle imguiGetCurrentFont();
 
 namespace bx { struct AllocatorI; }
 
+IMGUI_API
 ImguiFontHandle imguiCreate(const void* _data = NULL, uint32_t _size = 0, float _fontSize = 18.0f, bx::AllocatorI* _allocator = NULL);
 void imguiDestroy();
 
+IMGUI_API
 void imguiBeginFrame(int32_t _mx, int32_t _my, uint8_t _button, int32_t _scroll, uint16_t _width, uint16_t _height, char _inputChar = 0, uint8_t _view = 255);
+IMGUI_API
 void imguiBeginFrame(int32_t _mx, int32_t _my, uint8_t _button, int32_t _scroll, uint16_t _width, uint16_t _height, uint16_t _surfaceWidth, uint16_t _surfaceHeight, char _inputChar = 0, uint8_t _view = 255);
+IMGUI_API
 void imguiEndFrame();
 
 void imguiDrawText(int _x, int _y, ImguiTextAlign::Enum _align, const char* _text, uint32_t _argb);
@@ -158,12 +162,16 @@ void imguiEndArea();
 bool imguiBeginScroll(int32_t _height, int32_t* _scroll, bool _enabled = true);
 void imguiEndScroll(int32_t _r = IMGUI_SCROLL_BAR_R);
 
+IMGUI_API
 bool imguiBeginScrollArea(const char* _name, int _x, int _y, int _width, int _height, int* _scroll, bool _enabled = true, int32_t _r = IMGUI_SCROLL_AREA_R);
+IMGUI_API
 void imguiEndScrollArea(int32_t _r = IMGUI_SCROLL_BAR_R);
 
 void imguiIndent(uint16_t _width = IMGUI_INDENT_VALUE);
 void imguiUnindent(uint16_t _width = IMGUI_INDENT_VALUE);
+IMGUI_API
 void imguiSeparator(uint16_t _height = IMGUI_SEPARATOR_VALUE);
+IMGUI_API
 void imguiSeparatorLine(uint16_t _height = IMGUI_SEPARATOR_VALUE, ImguiAlign::Enum = ImguiAlign::LeftIndented);
 
 int32_t imguiGetWidgetX();
@@ -171,16 +179,25 @@ int32_t imguiGetWidgetY();
 int32_t imguiGetWidgetW();
 void imguiSetCurrentScissor(); // Call before drawing custom widgets over imgui area.
 
+IMGUI_API
 bool imguiButton(const char* _text, bool _enabled = true, ImguiAlign::Enum _align = ImguiAlign::LeftIndented, uint32_t _rgb0 = IMGUI_BUTTON_RGB0, int32_t _r = IMGUI_BUTTON_R);
 bool imguiItem(const char* _text, bool _enabled = true);
+IMGUI_API
 bool imguiCheck(const char* _text, bool _checked, bool _enabled = true);
+IMGUI_API
 bool imguiBool(const char* _text, bool& _flag, bool _enabled = true);
+IMGUI_API
 bool imguiCollapse(const char* _text, const char* _subtext, bool _checked, bool _enabled = true);
+IMGUI_API
 void imguiLabel(const char* _format, ...);
+IMGUI_API
 void imguiLabel(uint32_t _rgba, const char* _format, ...);
 void imguiValue(const char* _text);
+IMGUI_API
 bool imguiSlider(const char* _text, float& _val, float _vmin, float _vmax, float _vinc, bool _enabled = true, ImguiAlign::Enum _align = ImguiAlign::LeftIndented);
+IMGUI_API
 bool imguiSlider(const char* _text, int32_t& _val, int32_t _vmin, int32_t _vmax, bool _enabled = true, ImguiAlign::Enum _align = ImguiAlign::LeftIndented);
+IMGUI_API
 void imguiInput(const char* _label, char* _str, uint32_t _len, bool _enabled = true, ImguiAlign::Enum _align = ImguiAlign::LeftIndented, int32_t _r = IMGUI_INPUT_R);
 
 /// Usage example:
@@ -189,22 +206,34 @@ void imguiInput(const char* _label, char* _str, uint32_t _len, bool _enabled = t
 /// _nEnabled - Number of specified 'enabled' flags. All other unspecified tabs are considered enabled by default.
 ///             In the above example, there are 2 enabled flags: 'Tab0' is specified as enabled and 'Tab1' is specified as disabled.
 ///             Tab2 is unspecified and therefore is treated as enabled.
+IMGUI_API
 uint8_t imguiTabs(uint8_t _selected, bool _enabled, ImguiAlign::Enum _align, int32_t _height, int32_t _r, uint32_t _nTabs, uint32_t _nEnabled, ...);
+IMGUI_API
 uint8_t imguiTabs(uint8_t _selected, bool _enabled, ImguiAlign::Enum _align, int32_t _height, int32_t _r, uint32_t _nTabs, ...);
 
+IMGUI_API
 uint32_t imguiChooseUseMacroInstead(uint32_t _selected, ...);
 #define imguiChoose(...) imguiChooseUseMacroInstead(__VA_ARGS__, NULL)
 
+IMGUI_API
 void imguiColorWheel(float _rgb[3], bool _respectIndentation = false, float _size = 0.8f, bool _enabled = true);
+IMGUI_API
 void imguiColorWheel(const char* _str, float _rgb[3], bool& _activated, float _size = 0.8f, bool _enabled = true);
 
+IMGUI_API
 bool imguiImage(bgfx::TextureHandle _image, float _lod, int32_t _width, int32_t _height, ImguiAlign::Enum _align = ImguiAlign::LeftIndented, bool _enabled = true, bool _originBottomLeft = false);
+IMGUI_API
 bool imguiImage(bgfx::TextureHandle _image, float _lod, float _scale, float _aspect, ImguiAlign::Enum _align = ImguiAlign::LeftIndented, bool _enabled = true, bool _originBottomLeft = false);
+IMGUI_API
 bool imguiImageChannel(bgfx::TextureHandle _image, uint8_t _channel, float _lod, int32_t _width, int32_t _height, ImguiAlign::Enum _align = ImguiAlign::LeftIndented, bool _enabled = true);
+IMGUI_API
 bool imguiImageChannel(bgfx::TextureHandle _image, uint8_t _channel, float _lod, float _scale, float _aspect, ImguiAlign::Enum _align = ImguiAlign::LeftIndented, bool _enabled = true);
+IMGUI_API
 bool imguiCube(bgfx::TextureHandle _cubemap, float _lod = 0.0f, ImguiCubemap::Enum _display = ImguiCubemap::Cross, bool _sameHeight = false, ImguiAlign::Enum _align = ImguiAlign::LeftIndented, bool _enabled = true);
 
+IMGUI_API
 float imguiGetTextLength(const char* _text, ImguiFontHandle _handle);
+IMGUI_API
 bool imguiMouseOverArea();
 
 namespace ImGui

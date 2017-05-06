@@ -7,6 +7,9 @@
 #define NANOVG_BGFX_H_HEADER_GUARD
 
 #include "bgfx/bgfx.h"
+#ifndef IMGUI_API
+#define IMGUI_API
+#endif
 
 namespace bx { struct AllocatorI; }
 
@@ -20,7 +23,9 @@ struct NVGLUframebuffer {
 };
 typedef struct NVGLUframebuffer NVGLUframebuffer;
 
+IMGUI_API
 NVGcontext* nvgCreate(int edgeaa, unsigned char _viewId, bx::AllocatorI* _allocator);
+IMGUI_API
 NVGcontext* nvgCreate(int edgeaa, unsigned char _viewId);
 void nvgDelete(struct NVGcontext* ctx);
 uint8_t nvgViewId(struct NVGcontext* ctx);

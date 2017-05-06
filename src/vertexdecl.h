@@ -33,6 +33,7 @@ namespace bgfx
 	int32_t write(bx::WriterI* _writer, const bgfx::VertexDecl& _decl, bx::Error* _err = NULL);
 
 	///
+BGFX_SHARED_LIB_API
 	int32_t read(bx::ReaderI* _reader, bgfx::VertexDecl& _decl, bx::Error* _err = NULL);
 
 } // namespace bgfx

@@ -154,14 +154,12 @@ enum NVGimageFlags {
 // For example, GLFW returns two dimension for an opened window: window size and
 // frame buffer size. In that case you would set windowWidth/Height to the window size
 // devicePixelRatio to: frameBufferWidth / windowWidth.
-IMGUI_API
 void nvgBeginFrame(NVGcontext* ctx, int windowWidth, int windowHeight, float devicePixelRatio);
 
 // Cancels drawing the current frame.
 void nvgCancelFrame(NVGcontext* ctx);
 
 // Ends drawing flushing remaining render state.
-IMGUI_API
 void nvgEndFrame(NVGcontext* ctx);
 
 //
@@ -193,7 +191,6 @@ NVGcolor nvgRGBf(float r, float g, float b);
 
 
 // Returns a color value from red, green, blue and alpha values.
-IMGUI_API
 NVGcolor nvgRGBA(unsigned char r, unsigned char g, unsigned char b, unsigned char a);
 
 // Returns a color value from red, green, blue and alpha values.
@@ -215,7 +212,6 @@ NVGcolor nvgHSL(float h, float s, float l);
 
 // Returns color value specified by hue, saturation and lightness and alpha.
 // HSL values are all in range [0..1], alpha in range [0..255]
-IMGUI_API
 NVGcolor nvgHSLA(float h, float s, float l, unsigned char a);
 
 //
@@ -227,11 +223,9 @@ NVGcolor nvgHSLA(float h, float s, float l, unsigned char a);
 
 // Pushes and saves the current render state into a state stack.
 // A matching nvgRestore() must be used to restore the state.
-IMGUI_API
 void nvgSave(NVGcontext* ctx);
 
 // Pops and restores current render state.
-IMGUI_API
 void nvgRestore(NVGcontext* ctx);
 
 // Resets current render state to default values. Does not affect the render state stack.
@@ -247,7 +241,6 @@ void nvgReset(NVGcontext* ctx);
 // Current render style can be saved and restored using nvgSave() and nvgRestore().
 
 // Sets current stroke style to a solid color.
-IMGUI_API
 void nvgStrokeColor(NVGcontext* ctx, NVGcolor color);
 
 // Sets current stroke style to a paint, which can be a one of the gradients or a pattern.
@@ -257,7 +250,6 @@ void nvgStrokePaint(NVGcontext* ctx, NVGpaint paint);
 void nvgFillColor(NVGcontext* ctx, NVGcolor color);
 
 // Sets current fill style to a paint, which can be a one of the gradients or a pattern.
-IMGUI_API
 void nvgFillPaint(NVGcontext* ctx, NVGpaint paint);
 
 // Sets the miter limit of the stroke style.
@@ -265,22 +257,18 @@ void nvgFillPaint(NVGcontext* ctx, NVGpaint paint);
 void nvgMiterLimit(NVGcontext* ctx, float limit);
 
 // Sets the stroke width of the stroke style.
-IMGUI_API
 void nvgStrokeWidth(NVGcontext* ctx, float size);
 
 // Sets how the end of the line (cap) is drawn,
 // Can be one of: NVG_BUTT (default), NVG_ROUND, NVG_SQUARE.
-IMGUI_API
 void nvgLineCap(NVGcontext* ctx, int cap);
 
 // Sets how sharp path corners are drawn.
 // Can be one of NVG_MITER (default), NVG_ROUND, NVG_BEVEL.
-IMGUI_API
 void nvgLineJoin(NVGcontext* ctx, int join);
 
 // Sets the transparency applied to all rendered shapes.
 // Already transparent paths will get proportionally more transparent as well.
-IMGUI_API
 void nvgGlobalAlpha(NVGcontext* ctx, float alpha);
 
 //
@@ -308,15 +296,12 @@ void nvgResetTransform(NVGcontext* ctx);
 //   [a c e]
 //   [b d f]
 //   [0 0 1]
-IMGUI_API
 void nvgTransform(NVGcontext* ctx, float a, float b, float c, float d, float e, float f);
 
 // Translates current coordinate system.
-IMGUI_API
 void nvgTranslate(NVGcontext* ctx, float x, float y);
 
 // Rotates current coordinate system. Angle is specified in radians.
-IMGUI_API
 void nvgRotate(NVGcontext* ctx, float angle);
 
 // Skews the current coordinate system along X axis. Angle is specified in radians.
@@ -326,7 +311,6 @@ void nvgSkewX(NVGcontext* ctx, float angle);
 void nvgSkewY(NVGcontext* ctx, float angle);
 
 // Scales the current coordinate system.
-IMGUI_API
 void nvgScale(NVGcontext* ctx, float x, float y);
 
 // Stores the top part (a-f) of the current transformation matrix in to the specified buffer.
@@ -404,7 +388,6 @@ void nvgDeleteImage(NVGcontext* ctx, int image);
 // Creates and returns a linear gradient. Parameters (sx,sy)-(ex,ey) specify the start and end coordinates
 // of the linear gradient, icol specifies the start color and ocol the end color.
 // The gradient is transformed by the current transform when it is passed to nvgFillPaint() or nvgStrokePaint().
-IMGUI_API
 NVGpaint nvgLinearGradient(NVGcontext* ctx, float sx, float sy, float ex, float ey,
 						   NVGcolor icol, NVGcolor ocol);
 
@@ -413,14 +396,12 @@ NVGpaint nvgLinearGradient(NVGcontext* ctx, float sx, float sy, float ex, float 
 // (w,h) define the size of the rectangle, r defines the corner radius, and f feather. Feather defines how blurry
 // the border of the rectangle is. Parameter icol specifies the inner color and ocol the outer color of the gradient.
 // The gradient is transformed by the current transform when it is passed to nvgFillPaint() or nvgStrokePaint().
-IMGUI_API
 NVGpaint nvgBoxGradient(NVGcontext* ctx, float x, float y, float w, float h,
 						float r, float f, NVGcolor icol, NVGcolor ocol);
 
 // Creates and returns a radial gradient. Parameters (cx,cy) specify the center, inr and outr specify
 // the inner and outer radius of the gradient, icol specifies the start color and ocol the end color.
 // The gradient is transformed by the current transform when it is passed to nvgFillPaint() or nvgStrokePaint().
-IMGUI_API
 NVGpaint nvgRadialGradient(NVGcontext* ctx, float cx, float cy, float inr, float outr,
 						   NVGcolor icol, NVGcolor ocol);
 
@@ -469,68 +450,53 @@ void nvgResetScissor(NVGcontext* ctx);
 // The curve segments and sub-paths are transformed by the current transform.
 
 // Clears the current path and sub-paths.
-IMGUI_API
 void nvgBeginPath(NVGcontext* ctx);
 
 // Starts new sub-path with specified point as first point.
-IMGUI_API
 void nvgMoveTo(NVGcontext* ctx, float x, float y);
 
 // Adds line segment from the last point in the path to the specified point.
-IMGUI_API
 void nvgLineTo(NVGcontext* ctx, float x, float y);
 
 // Adds cubic bezier segment from last point in the path via two control points to the specified point.
-IMGUI_API
 void nvgBezierTo(NVGcontext* ctx, float c1x, float c1y, float c2x, float c2y, float x, float y);
 
 // Adds quadratic bezier segment from last point in the path via a control point to the specified point.
-IMGUI_API
 void nvgQuadTo(NVGcontext* ctx, float cx, float cy, float x, float y);
 
 // Adds an arc segment at the corner defined by the last path point, and two specified points.
-IMGUI_API
 void nvgArcTo(NVGcontext* ctx, float x1, float y1, float x2, float y2, float radius);
 
 // Closes current sub-path with a line segment.
-IMGUI_API
 void nvgClosePath(NVGcontext* ctx);
 
 // Sets the current sub-path winding, see NVGwinding and NVGsolidity.
-IMGUI_API
 void nvgPathWinding(NVGcontext* ctx, int dir);
 
 // Creates new circle arc shaped sub-path. The arc center is at cx,cy, the arc radius is r,
 // and the arc is drawn from angle a0 to a1, and swept in direction dir (NVG_CCW, or NVG_CW).
 // Angles are specified in radians.
-IMGUI_API
 void nvgArc(NVGcontext* ctx, float cx, float cy, float r, float a0, float a1, int dir);
 
 // Creates new rectangle shaped sub-path.
-IMGUI_API
 void nvgRect(NVGcontext* ctx, float x, float y, float w, float h);
 
 // Creates new rounded rectangle shaped sub-path.
-IMGUI_API
 void nvgRoundedRect(NVGcontext* ctx, float x, float y, float w, float h, float r);
 
 // Creates new rounded rectangle shaped sub-path with varying radii for each corner.
 void nvgRoundedRectVarying(NVGcontext* ctx, float x, float y, float w, float h, float radTopLeft, float radTopRight, float radBottomRight, float radBottomLeft);
 
 // Creates new ellipse shaped sub-path.
-IMGUI_API
 void nvgEllipse(NVGcontext* ctx, float cx, float cy, float rx, float ry);
 
 // Creates new circle shaped sub-path.
-IMGUI_API
 void nvgCircle(NVGcontext* ctx, float cx, float cy, float r);
 
 // Fills the current path with current fill style.
-IMGUI_API
 void nvgFill(NVGcontext* ctx);
 
 // Fills the current path with current stroke style.
-IMGUI_API
 void nvgStroke(NVGcontext* ctx);
 
 

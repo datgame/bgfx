@@ -42,6 +42,7 @@
 namespace glslang {
 
 class TAttributeMap; // forward declare
+class TFunctionDeclarator;
 
 class HlslParseContext : public TParseContextBase {
 public:
@@ -76,7 +77,7 @@ public:
     TIntermTyped* handleUnaryMath(const TSourceLoc&, const char* str, TOperator op, TIntermTyped* childNode);
     TIntermTyped* handleDotDereference(const TSourceLoc&, TIntermTyped* base, const TString& field);
     bool isBuiltInMethod(const TSourceLoc&, TIntermTyped* base, const TString& field);
-    void assignLocations(TVariable& variable);
+    void assignToInterface(TVariable& variable);
     void handleFunctionDeclarator(const TSourceLoc&, TFunction& function, bool prototype);
     TIntermAggregate* handleFunctionDefinition(const TSourceLoc&, TFunction&, const TAttributeMap&, TIntermNode*& entryPointTree);
     TIntermNode* transformEntryPoint(const TSourceLoc&, TFunction&, const TAttributeMap&);
@@ -89,11 +90,14 @@ public:
     TIntermTyped* handleAssign(const TSourceLoc&, TOperator, TIntermTyped* left, TIntermTyped* right);
     TIntermTyped* handleAssignToMatrixSwizzle(const TSourceLoc&, TOperator, TIntermTyped* left, TIntermTyped* right);
     TIntermTyped* handleFunctionCall(const TSourceLoc&, TFunction*, TIntermTyped*);
+    TIntermAggregate* assignClipCullDistance(const TSourceLoc&, TOperator, TIntermTyped* left, TIntermTyped* right);
     void decomposeIntrinsic(const TSourceLoc&, TIntermTyped*& node, TIntermNode* arguments);
     void decomposeSampleMethods(const TSourceLoc&, TIntermTyped*& node, TIntermNode* arguments);
     void decomposeStructBufferMethods(const TSourceLoc&, TIntermTyped*& node, TIntermNode* arguments);
     void decomposeGeometryMethods(const TSourceLoc&, TIntermTyped*& node, TIntermNode* arguments);
+    void pushFrontArguments(TIntermTyped* front, TIntermTyped*& arguments);
     void addInputArgumentConversions(const TFunction&, TIntermTyped*&);
+    void expandArguments(const TSourceLoc&, const TFunction&, TIntermTyped*&);
     TIntermTyped* addOutputArgumentConversions(const TFunction&, TIntermOperator&);
     void builtInOpCheck(const TSourceLoc&, const TFunction&, TIntermOperator&);
     TFunction* makeConstructorCall(const TSourceLoc&, const TType&);
@@ -135,7 +139,7 @@ public:
     void mergeObjectLayoutQualifiers(TQualifier& dest, const TQualifier& src, bool inheritOnly);
     void checkNoShaderLayouts(const TSourceLoc&, const TShaderQualifiers&);
 
-    const TFunction* findFunction(const TSourceLoc& loc, TFunction& call, bool& builtIn, TIntermTyped*& args);
+    const TFunction* findFunction(const TSourceLoc& loc, TFunction& call, bool& builtIn, int& thisDepth, TIntermTyped*& args);
     void declareTypedef(const TSourceLoc&, const TString& identifier, const TType&);
     void declareStruct(const TSourceLoc&, TString& structName, TType&);
     TSymbol* lookupUserType(const TString&, TType&);
@@ -143,6 +147,7 @@ public:
     void lengthenList(const TSourceLoc&, TIntermSequence& list, int size, TIntermTyped* scalarInit);
     TIntermTyped* handleConstructor(const TSourceLoc&, TIntermTyped*, const TType&);
     TIntermTyped* addConstructor(const TSourceLoc&, TIntermTyped*, const TType&);
+    TIntermTyped* convertArray(TIntermTyped*, const TType&);
     TIntermTyped* constructAggregate(TIntermNode*, const TType&, int, const TSourceLoc&);
     TIntermTyped* constructBuiltIn(const TType&, TOperator, TIntermTyped*, const TSourceLoc&, bool subset);
     void declareBlock(const TSourceLoc&, TType&, const TString* instanceName = 0, TArraySizes* arraySizes = 0);
@@ -166,7 +171,7 @@ public:
     void pushScope()         { symbolTable.push(); }
     void popScope()          { symbolTable.pop(0); }
 
-    void pushThisScope(const TType&);
+    void pushThisScope(const TType&, const TVector<TFunctionDeclarator>&);
     void popThisScope()      { symbolTable.pop(0); }
 
     void pushImplicitThis(TVariable* thisParameter) { implicitThisStack.push_back(thisParameter); }
@@ -184,7 +189,8 @@ public:
     virtual void growGlobalUniformBlock(const TSourceLoc&, TType&, const TString& memberName, TTypeList* typeList = nullptr) override;
 
     // Apply L-value conversions.  E.g, turning a write to a RWTexture into an ImageStore.
-    TIntermTyped* handleLvalue(const TSourceLoc&, const char* op, TIntermTyped* node);
+    TIntermTyped* handleLvalue(const TSourceLoc&, const char* op, TIntermTyped*& node);
+    TIntermTyped* handleSamplerLvalue(const TSourceLoc&, const char* op, TIntermTyped*& node);
     bool lValueErrorCheck(const TSourceLoc&, const char* op, TIntermTyped*) override;
 
     TLayoutFormat getLayoutFromTxType(const TSourceLoc&, const TType&);
@@ -207,12 +213,14 @@ public:
 
 protected:
     struct TFlattenData {
-        TFlattenData() : nextBinding(TQualifier::layoutBindingEnd) { }
-        TFlattenData(int nb) : nextBinding(nb) { }
+        TFlattenData() : nextBinding(TQualifier::layoutBindingEnd),
+                         nextLocation(TQualifier::layoutLocationEnd) { }
+        TFlattenData(int nb, int nl) : nextBinding(nb), nextLocation(nl) { }
 
         TVector<TVariable*> members;     // individual flattened variables
-        TVector<int>        offsets;     // offset to next tree level
-        int                 nextBinding; // next binding to use.
+        TVector<int> offsets;            // offset to next tree level
+        unsigned int nextBinding;        // next binding to use.
+        unsigned int nextLocation;       // next location to use
     };
 
     void fixConstInit(const TSourceLoc&, const TString& identifier, TType& type, TIntermTyped*& initializer);
@@ -234,13 +242,14 @@ protected:
 
     // Array and struct flattening
     TIntermTyped* flattenAccess(TIntermTyped* base, int member);
-    bool shouldFlattenUniform(const TType&) const;
+    TIntermTyped* flattenAccess(int uniqueId, int member, const TType&);
+    bool shouldFlatten(const TType&) const;
     bool wasFlattened(const TIntermTyped* node) const;
     bool wasFlattened(int id) const { return flattenMap.find(id) != flattenMap.end(); }
     int  addFlattenedMember(const TSourceLoc& loc, const TVariable&, const TType&, TFlattenData&, const TString& name, bool track);
     bool isFinalFlattening(const TType& type) const { return !(type.isStruct() || type.isArray()); }
 
-    // Structure splitting (splits interstage builtin types into its own struct)
+    // Structure splitting (splits interstage built-in types into its own struct)
     TIntermTyped* splitAccessStruct(const TSourceLoc& loc, TIntermTyped*& base, int& member);
     void splitAccessArray(const TSourceLoc& loc, TIntermTyped* base, TIntermTyped* index);
     TType& split(TType& type, TString name, const TType* outerStructType = nullptr);
@@ -275,6 +284,7 @@ protected:
 
     // Test method names
     bool isStructBufferMethod(const TString& name) const;
+    void counterBufferType(const TSourceLoc& loc, TType& type);
 
     // Return standard sample position array
     TIntermConstantUnion* getSamplePosArray(int count);
@@ -283,13 +293,16 @@ protected:
     bool isStructBufferType(const TType& type) const { return getStructBufferContentType(type) != nullptr; }
     TIntermTyped* indexStructBufferContent(const TSourceLoc& loc, TIntermTyped* buffer) const;
     TIntermTyped* getStructBufferCounter(const TSourceLoc& loc, TIntermTyped* buffer);
+    TString getStructBuffCounterName(const TString&) const;
+    void addStructBuffArguments(const TSourceLoc& loc, TIntermAggregate*&);
+    void addStructBufferHiddenCounterParam(const TSourceLoc& loc, TParameter&, TIntermAggregate*&);
 
     // Return true if this type is a reference.  This is not currently a type method in case that's
     // a language specific answer.
     bool isReference(const TType& type) const { return isStructBufferType(type); }
 
     // Return true if this a buffer type that has an associated counter buffer.
-    bool hasStructBuffCounter(const TString& name) const;
+    bool hasStructBuffCounter(const TType&) const;
 
     // Finalization step: remove unused buffer blocks from linkage (we don't know until the
     // shader is entirely compiled)
@@ -305,17 +318,7 @@ protected:
     TIntermSymbol* findLinkageSymbol(TBuiltInVariable biType) const;
 
     // Current state of parsing
-    struct TPragma contextPragma;
-    int loopNestingLevel;        // 0 if outside all loops
     int annotationNestingLevel;  // 0 if outside all annotations
-    int structNestingLevel;      // 0 if outside blocks and structures
-    int controlFlowNestingLevel; // 0 if outside all flow control
-    TList<TIntermSequence*> switchSequenceStack;  // case, node, case, case, node, ...; ensure only one node between cases;   stack of them for nesting
-    bool postEntryPointReturn;         // if inside a function, true if the function is the entry point and this is after a return statement
-    const TType* currentFunctionType;  // the return type of the function that's currently being parsed
-    bool functionReturnsValue;   // true if a non-void function has a return
-    TBuiltInResource resources;
-    TLimits& limits;
 
     HlslParseContext(HlslParseContext&);
     HlslParseContext& operator=(HlslParseContext&);
@@ -383,7 +386,6 @@ protected:
     // Structuredbuffer shared types.  Typically there are only a few.
     TVector<TType*> structBufferTypes;
     
-    TMap<TString, TBuiltInVariable> structBufferBuiltIn;
     TMap<TString, bool> structBufferCounter;
 
     // The builtin interstage IO map considers e.g, EvqPosition on input and output separately, so that we
@@ -429,6 +431,17 @@ protected:
     TVector<TVariable*> implicitThisStack;   // currently active 'this' variables for nested structures
 
     TVariable* gsStreamOutput;               // geometry shader stream outputs, for emit (Append method)
+
+    // This tracks the first (mip level) argument to the .mips[][] operator.  Since this can be nested as
+    // in tx.mips[tx.mips[0][1].x][2], we need a stack.  We also track the TSourceLoc for error reporting 
+    // purposes.
+    struct tMipsOperatorData {
+        tMipsOperatorData(TSourceLoc l, TIntermTyped* m) : loc(l), mipLevel(m) { }
+        TSourceLoc loc;
+        TIntermTyped* mipLevel;
+    };
+
+    TVector<tMipsOperatorData> mipsOperatorMipArg;
 };
 
 // This is the prefix we use for builtin methods to avoid namespace collisions with

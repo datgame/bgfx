@@ -63,6 +63,8 @@ namespace bgfx { namespace gl
 		"a_bitangent",
 		"a_color0",
 		"a_color1",
+		"a_color2",
+		"a_color3",
 		"a_indices",
 		"a_weight",
 		"a_texcoord0",
@@ -896,15 +898,6 @@ namespace bgfx { namespace gl
 		NULL
 	};
 
-	static const char* s_OES_texture_3D[] =
-	{
-		"texture3D",
-		"texture3DProj",
-		"texture3DLod",
-		"texture3DProjLod",
-		NULL
-	};
-
 	static const char* s_uisamplers[] =
 	{
 		"isampler2D",
@@ -920,6 +913,13 @@ namespace bgfx { namespace gl
 	{
 		"texelFetch",
 		"texelFetchOffset",
+		NULL
+	};
+
+	static const char* s_texture3D[] =
+	{
+		"sampler3D",
+		"sampler3DArray",
 		NULL
 	};
 
@@ -1471,7 +1471,7 @@ namespace bgfx { namespace gl
 		{
 			m_renderdocdll = loadRenderDoc();
 
-			m_fbh.idx = invalidHandle;
+			m_fbh.idx = kInvalidHandle;
 			bx::memSet(m_uniforms, 0, sizeof(m_uniforms) );
 			bx::memSet(&m_resolution, 0, sizeof(m_resolution) );
 
@@ -1574,6 +1574,13 @@ namespace bgfx { namespace gl
 				// Skip initializing extensions that are broken in emulator.
 				s_extension[Extension::ARB_program_interface_query     ].m_initialize =
 				s_extension[Extension::ARB_shader_storage_buffer_object].m_initialize = false;
+			}
+
+			if (BX_ENABLED(BGFX_CONFIG_RENDERER_OPENGLES)
+			&&  0    == bx::strCmp(m_vendor,  "Imagination Technologies")
+			&&  NULL != bx::strFind(m_version, "1.8@905891") )
+			{
+				m_workaround.m_detachShader = false;
 			}
 
 			if (BX_ENABLED(BGFX_CONFIG_RENDERER_USE_EXTENSIONS) )
@@ -2029,15 +2036,6 @@ namespace bgfx { namespace gl
 				|| s_extension[Extension::ARB_vertex_array_object].m_supported
 				|| s_extension[Extension::OES_vertex_array_object].m_supported
 				;
-
-			if (BX_ENABLED(BX_PLATFORM_NACL) )
-			{
-				m_vaoSupport &= true
-					&& NULL != glGenVertexArrays
-					&& NULL != glDeleteVertexArrays
-					&& NULL != glBindVertexArray
-					;
-			}
 
 			if (m_vaoSupport)
 			{
@@ -2649,7 +2647,7 @@ namespace bgfx { namespace gl
 			GL_CHECK(glUniform1i(program.m_sampler[0], 0) );
 
 			float proj[16];
-			bx::mtxOrtho(proj, 0.0f, (float)width, (float)height, 0.0f, 0.0f, 1000.0f);
+			bx::mtxOrtho(proj, 0.0f, (float)width, (float)height, 0.0f, 0.0f, 1000.0f, 0.0f, true);
 
 			GL_CHECK(glUniformMatrix4fv(program.m_predefined[0].m_loc
 				, 1
@@ -4614,7 +4612,8 @@ namespace bgfx { namespace gl
 		, const GLvoid* _data
 	)
 	{
-		if (_target == GL_TEXTURE_3D)
+		if (_target == GL_TEXTURE_3D
+		||  _target == GL_TEXTURE_2D_ARRAY)
 		{
 			GL_CHECK(glCompressedTexSubImage3D(
 				  _target
@@ -5433,7 +5432,8 @@ namespace bgfx { namespace gl
 
 		if (0 != m_id)
 		{
-			if (GL_COMPUTE_SHADER != m_type)
+			if (GL_COMPUTE_SHADER != m_type
+			&&  0 != bx::strCmp(code, "#version 430", 12) )
 			{
 				int32_t codeLen = (int32_t)bx::strLen(code);
 				int32_t tempLen = codeLen + (4<<10);
@@ -5461,7 +5461,7 @@ namespace bgfx { namespace gl
 					bool usesShadowSamplers = !!bx::findIdentifierMatch(code, s_EXT_shadow_samplers);
 
 					bool usesTexture3D = s_extension[Extension::OES_texture_3D].m_supported
-						&& bx::findIdentifierMatch(code, s_OES_texture_3D)
+						&& bx::findIdentifierMatch(code, s_texture3D)
 						;
 
 					bool usesTextureLod = !!bx::findIdentifierMatch(code, s_EXT_shader_texture_lod);
@@ -5629,11 +5629,12 @@ namespace bgfx { namespace gl
 					const bool usesIUsamplers   = !!bx::findIdentifierMatch(code, s_uisamplers);
 					const bool usesTexelFetch   = !!bx::findIdentifierMatch(code, s_texelFetch);
 					const bool usesTextureArray = !!bx::findIdentifierMatch(code, s_textureArray);
+					const bool usesTexture3D    = !!bx::findIdentifierMatch(code, s_texture3D);
 					const bool usesTextureMS    = !!bx::findIdentifierMatch(code, s_ARB_texture_multisample);
 					const bool usesPacking      = !!bx::findIdentifierMatch(code, s_ARB_shading_language_packing);
 
 					uint32_t version =
-						  usesIUsamplers|| usesTexelFetch || usesGpuShader5 ? 130
+						  usesTextureArray || usesTexture3D || usesIUsamplers|| usesTexelFetch || usesGpuShader5 ? 130
 						: usesTextureLod ? 120
 						: 120
 						;
@@ -5678,7 +5679,18 @@ namespace bgfx { namespace gl
 
 					if (usesTextureArray)
 					{
-						writeString(&writer, "#extension GL_EXT_texture_array : enable\n");
+						writeString(&writer
+							, "#extension GL_EXT_texture_array : enable\n"
+							  "#define texture2DArrayLodEXT texture2DArrayLod\n"
+							);
+					}
+
+					if (usesTexture3D)
+					{
+						writeString(&writer
+							, "#define texture3DEXT    texture3D\n"
+							  "#define texture3DLodEXT texture3DLod\n"
+							);
 					}
 
 					if (130 <= version)
@@ -5849,6 +5861,26 @@ namespace bgfx { namespace gl
 
 				code = temp;
 			}
+			else if (GL_COMPUTE_SHADER == m_type)
+			{
+				int32_t codeLen = (int32_t)bx::strLen(code);
+				int32_t tempLen = codeLen + (4<<10);
+				char* temp = (char*)alloca(tempLen);
+				bx::StaticMemoryBlockWriter writer(temp, tempLen);
+
+				writeString(&writer, "#version 430\n");
+				writeString(&writer, "#define texture2DLod    textureLod\n");
+				writeString(&writer, "#define texture3DLod    textureLod\n");
+				writeString(&writer, "#define textureCubeLod  textureLod\n");
+				writeString(&writer, "#define texture2DGrad   textureGrad\n");
+				writeString(&writer, "#define texture3DGrad   textureGrad\n");
+				writeString(&writer, "#define textureCubeGrad textureGrad\n");
+
+				bx::write(&writer, code+bx::strLen("#version 430"), codeLen);
+				bx::write(&writer, '\0');
+
+				code = temp;
+			}
 
 			GL_CHECK(glShaderSource(m_id, 1, (const GLchar**)&code, NULL) );
 			GL_CHECK(glCompileShader(m_id) );
@@ -5858,7 +5890,24 @@ namespace bgfx { namespace gl
 
 			if (0 == compiled)
 			{
-				BX_TRACE("\n####\n%s\n####", code);
+				LineReader lineReader(code);
+				bx::Error err;
+				for (int32_t line = 1; err.isOk(); ++line)
+				{
+					char str[4096];
+					int32_t len = bx::read(&lineReader, str, BX_COUNTOF(str)-1, &err);
+
+					if (err.isOk() )
+					{
+						str[len] = '\0';
+						const char* eol = bx::streol(str);
+						if (eol != str)
+						{
+							*const_cast<char*>(eol) = '\0';
+						}
+						BX_TRACE("%3d %s", line, str);
+					}
+				}
 
 				GLsizei len;
 				char log[1024];
@@ -6229,7 +6278,7 @@ namespace bgfx { namespace gl
 			Query& query = m_query[(m_control.m_read + ii) % size];
 			if (query.m_handle.idx == _handle.idx)
 			{
-				query.m_handle.idx = bgfx::invalidHandle;
+				query.m_handle.idx = bgfx::kInvalidHandle;
 			}
 		}
 	}
@@ -6342,7 +6391,7 @@ namespace bgfx { namespace gl
 		static ViewState viewState;
 		viewState.reset(_render, hmdEnabled);
 
-		uint16_t programIdx = invalidHandle;
+		uint16_t programIdx = kInvalidHandle;
 		SortKey key;
 		uint16_t view = UINT16_MAX;
 		FrameBufferHandle fbh = { BGFX_CONFIG_MAX_FRAME_BUFFERS };
@@ -6430,7 +6479,7 @@ namespace bgfx { namespace gl
 					}
 
 					view = key.m_view;
-					programIdx = invalidHandle;
+					programIdx = kInvalidHandle;
 
 					if (_render->m_fb[view].idx != fbh.idx)
 					{
@@ -6553,17 +6602,24 @@ namespace bgfx { namespace gl
 						for (uint32_t ii = 0; ii < BGFX_MAX_COMPUTE_BINDINGS; ++ii)
 						{
 							const Binding& bind = renderBind.m_bind[ii];
-							if (invalidHandle != bind.m_idx)
+							if (kInvalidHandle != bind.m_idx)
 							{
 								switch (bind.m_type)
 								{
+								case Binding::Texture:
+									{
+										TextureGL& texture = m_textures[bind.m_idx];
+										texture.commit(ii, bind.m_un.m_draw.m_textureFlags, _render->m_colorPalette);
+									}
+									break;
+
 								case Binding::Image:
 									{
 										const TextureGL& texture = m_textures[bind.m_idx];
 										GL_CHECK(glBindImageTexture(ii
 											, texture.m_id
 											, bind.m_un.m_compute.m_mip
-											, texture.isCubeMap()?GL_TRUE:GL_FALSE
+											, texture.isCubeMap() ? GL_TRUE : GL_FALSE
 											, 0
 											, s_access[bind.m_un.m_compute.m_access]
 											, s_imageFormat[bind.m_un.m_compute.m_format])
@@ -6629,7 +6685,7 @@ namespace bgfx { namespace gl
 							{
 								if (isValid(currentState.m_indirectBuffer) )
 								{
-									currentState.m_indirectBuffer.idx = invalidHandle;
+									currentState.m_indirectBuffer.idx = kInvalidHandle;
 									GL_CHECK(glBindBuffer(GL_DISPATCH_INDIRECT_BUFFER, 0) );
 								}
 
@@ -7014,10 +7070,10 @@ namespace bgfx { namespace gl
 				if (key.m_program != programIdx)
 				{
 					programIdx = key.m_program;
-					GLuint id = invalidHandle == programIdx ? 0 : m_program[programIdx].m_id;
+					GLuint id = kInvalidHandle == programIdx ? 0 : m_program[programIdx].m_id;
 
 					// Skip rendering if program index is valid, but program is invalid.
-					programIdx = 0 == id ? invalidHandle : programIdx;
+					programIdx = 0 == id ? kInvalidHandle : programIdx;
 
 					GL_CHECK(glUseProgram(id) );
 					programChanged =
@@ -7025,7 +7081,7 @@ namespace bgfx { namespace gl
 						bindAttribs = true;
 				}
 
-				if (invalidHandle != programIdx)
+				if (kInvalidHandle != programIdx)
 				{
 					ProgramGL& program = m_program[programIdx];
 
@@ -7047,7 +7103,7 @@ namespace bgfx { namespace gl
 							||  current.m_un.m_draw.m_textureFlags != bind.m_un.m_draw.m_textureFlags
 							||  programChanged)
 							{
-								if (invalidHandle != bind.m_idx)
+								if (kInvalidHandle != bind.m_idx)
 								{
 									switch (bind.m_type)
 									{
@@ -7221,9 +7277,9 @@ namespace bgfx { namespace gl
 							currentState.m_streamMask = 0;
 							for (size_t ii = 0; ii < BGFX_CONFIG_MAX_VERTEX_STREAMS; ++ii)
 							{
-								currentState.m_stream[ii].m_handle.idx = invalidHandle;
+								currentState.m_stream[ii].m_handle.idx = kInvalidHandle;
 							}
-							currentState.m_indexBuffer.idx = invalidHandle;
+							currentState.m_indexBuffer.idx = kInvalidHandle;
 							bindAttribs = true;
 							currentVao = 0;
 						}
@@ -7275,7 +7331,7 @@ namespace bgfx { namespace gl
 							currentState.m_indexBuffer = draw.m_indexBuffer;
 
 							uint16_t handle = draw.m_indexBuffer.idx;
-							if (invalidHandle != handle)
+							if (kInvalidHandle != handle)
 							{
 								IndexBufferGL& ib = m_indexBuffers[handle];
 								GL_CHECK(glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ib.m_id) );
@@ -7414,7 +7470,7 @@ namespace bgfx { namespace gl
 						{
 							if (isValid(currentState.m_indirectBuffer) )
 							{
-								currentState.m_indirectBuffer.idx = invalidHandle;
+								currentState.m_indirectBuffer.idx = kInvalidHandle;
 								GL_CHECK(glBindBuffer(GL_DRAW_INDIRECT_BUFFER, 0) );
 							}
 

@@ -1,4 +1,4 @@
-// dear imgui, v1.50 WIP
+// dear imgui, v1.51 WIP
 // (main code and documentation)
 
 // See ImGui::ShowTestWindow() in imgui_demo.cpp for demo code.
@@ -152,7 +152,8 @@
  Here is a change-log of API breaking changes, if you are using one of the functions listed, expect to have to fix some code.
  Also read releases logs https://github.com/ocornut/imgui/releases for more details.
 
- - 2017/05/01 (1.50) - Renamed ImDrawList::PathFill() to ImDrawList::PathFillConvex() for clarity.
+ - 2017/05/26 (1.50) - Removed ImFontConfig::MergeGlyphCenterV in favor of a more multipurpose ImFontConfig::GlyphOffset.
+ - 2017/05/01 (1.50) - Renamed ImDrawList::PathFill() (rarely used directly) to ImDrawList::PathFillConvex() for clarity.
  - 2016/11/06 (1.50) - BeginChild(const char*) now applies the stack id to the provided label, consistently with other functions as it should always have been. It shouldn't affect you unless (extremely unlikely) you were appending multiple times to a same child from different locations of the stack id. If that's the case, generate an id with GetId() and use it instead of passing string to BeginChild().
  - 2016/10/15 (1.50) - avoid 'void* user_data' parameter to io.SetClipboardTextFn/io.GetClipboardTextFn pointers. We pass io.ClipboardUserData to it.
  - 2016/09/25 (1.50) - style.WindowTitleAlign is now a ImVec2 (ImGuiAlign enum was removed). set to (0.5f,0.5f) for horizontal+vertical centering, (0.0f,0.0f) for upper-left, etc.
@@ -279,8 +280,9 @@
       stb_textedit.h
       stb_truetype.h
     Don't overwrite imconfig.h if you have made modification to your copy.
-    Check the "API BREAKING CHANGES" sections for a list of occasional API breaking changes. If you have a problem with a function, search for its name
-    in the code, there will likely be a comment about it. Please report any issue to the GitHub page!
+    If you have a problem with a missing function/symbols, search for its name in the code, there will likely be a comment about it. 
+    Check the "API BREAKING CHANGES" sections for a list of occasional API breaking changes. 
+    Please report any issue to the GitHub page!
 
  Q: What is ImTextureID and how do I display an image?
  A: ImTextureID is a void* used to pass renderer-agnostic texture references around until it hits your render function.
@@ -2601,14 +2603,19 @@ static void AddDrawListToRenderList(ImVector<ImDrawList*>& out_render_list, ImDr
             return;
     }
 
-    // Draw list sanity check. Detect mismatch between PrimReserve() calls and incrementing _VtxCurrentIdx, _VtxWritePtr etc.
+    // Draw list sanity check. Detect mismatch between PrimReserve() calls and incrementing _VtxCurrentIdx, _VtxWritePtr etc. May trigger for you if you are using PrimXXX functions incorrectly.
     IM_ASSERT(draw_list->VtxBuffer.Size == 0 || draw_list->_VtxWritePtr == draw_list->VtxBuffer.Data + draw_list->VtxBuffer.Size);
     IM_ASSERT(draw_list->IdxBuffer.Size == 0 || draw_list->_IdxWritePtr == draw_list->IdxBuffer.Data + draw_list->IdxBuffer.Size);
     IM_ASSERT((int)draw_list->_VtxCurrentIdx == draw_list->VtxBuffer.Size);
 
-    // Check that draw_list doesn't use more vertices than indexable (default ImDrawIdx = 2 bytes = 64K vertices)
-    // If this assert triggers because you are drawing lots of stuff manually, A) workaround by calling BeginChild()/EndChild() to put your draw commands in multiple draw lists, B) #define ImDrawIdx to a 'unsigned int' in imconfig.h and render accordingly.
-    IM_ASSERT((int64_t)draw_list->_VtxCurrentIdx <= ((int64_t)1L << (sizeof(ImDrawIdx)*8)));  // Too many vertices in same ImDrawList. See comment above.
+    // Check that draw_list doesn't use more vertices than indexable in a single draw call (default ImDrawIdx = unsigned short = 2 bytes = 64K vertices per window)
+    // If this assert triggers because you are drawing lots of stuff manually, you can:
+    // A) Add '#define ImDrawIdx unsigned int' in imconfig.h to set the index size to 4 bytes. You'll need to handle the 4-bytes indices to your renderer.
+    //    For example, the OpenGL example code detect index size at compile-time by doing:
+    //    'glDrawElements(GL_TRIANGLES, (GLsizei)pcmd->ElemCount, sizeof(ImDrawIdx) == 2 ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT, idx_buffer_offset);'
+    //    Your own engine or render API may use different parameters or function calls to specify index sizes. 2 and 4 bytes indices are generally supported by most API.
+    // B) If for some reason you cannot use 4 bytes indices or don't want to, a workaround is to call BeginChild()/EndChild() before reaching the 64K limit to split your draw commands in multiple draw lists.
+    IM_ASSERT(((ImU64)draw_list->_VtxCurrentIdx >> (sizeof(ImDrawIdx)*8)) == 0);  // Too many vertices in same ImDrawList. See comment above.
     
     out_render_list.push_back(draw_list);
     GImGui->IO.MetricsRenderVertices += draw_list->VtxBuffer.Size;
@@ -3152,25 +3159,26 @@ static bool IsKeyPressedMap(ImGuiKey key, bool repeat)
     return ImGui::IsKeyPressed(key_index, repeat);
 }
 
-int ImGui::GetKeyIndex(ImGuiKey key)
+int ImGui::GetKeyIndex(ImGuiKey imgui_key)
 {
-    IM_ASSERT(key >= 0 && key < ImGuiKey_COUNT);
-    return GImGui->IO.KeyMap[key];
+    IM_ASSERT(imgui_key >= 0 && imgui_key < ImGuiKey_COUNT);
+    return GImGui->IO.KeyMap[imgui_key];
 }
 
-bool ImGui::IsKeyDown(int key_index)
+// Note that imgui doesn't know the semantic of each entry of io.KeyDown[]. Use your own indices/enums according to how your backend/engine stored them into KeyDown[]!
+bool ImGui::IsKeyDown(int user_key_index)
 {
-    if (key_index < 0) return false;
-    IM_ASSERT(key_index >= 0 && key_index < IM_ARRAYSIZE(GImGui->IO.KeysDown));
-    return GImGui->IO.KeysDown[key_index];
+    if (user_key_index < 0) return false;
+    IM_ASSERT(user_key_index >= 0 && user_key_index < IM_ARRAYSIZE(GImGui->IO.KeysDown));
+    return GImGui->IO.KeysDown[user_key_index];
 }
 
-bool ImGui::IsKeyPressed(int key_index, bool repeat)
+bool ImGui::IsKeyPressed(int user_key_index, bool repeat)
 {
     ImGuiContext& g = *GImGui;
-    if (key_index < 0) return false;
-    IM_ASSERT(key_index >= 0 && key_index < IM_ARRAYSIZE(g.IO.KeysDown));
-    const float t = g.IO.KeysDownDuration[key_index];
+    if (user_key_index < 0) return false;
+    IM_ASSERT(user_key_index >= 0 && user_key_index < IM_ARRAYSIZE(g.IO.KeysDown));
+    const float t = g.IO.KeysDownDuration[user_key_index];
     if (t == 0.0f)
         return true;
 
@@ -3183,12 +3191,12 @@ bool ImGui::IsKeyPressed(int key_index, bool repeat)
     return false;
 }
 
-bool ImGui::IsKeyReleased(int key_index)
+bool ImGui::IsKeyReleased(int user_key_index)
 {
     ImGuiContext& g = *GImGui;
-    if (key_index < 0) return false;
-    IM_ASSERT(key_index >= 0 && key_index < IM_ARRAYSIZE(g.IO.KeysDown));
-    if (g.IO.KeysDownDurationPrev[key_index] >= 0.0f && !g.IO.KeysDown[key_index])
+    if (user_key_index < 0) return false;
+    IM_ASSERT(user_key_index >= 0 && user_key_index < IM_ARRAYSIZE(g.IO.KeysDown));
+    if (g.IO.KeysDownDurationPrev[user_key_index] >= 0.0f && !g.IO.KeysDown[user_key_index])
         return true;
     return false;
 }
@@ -4745,18 +4753,18 @@ struct ImGuiStyleVarInfo
 
 static const ImGuiStyleVarInfo GStyleVarInfo[ImGuiStyleVar_Count_] =
 {
-    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, Alpha) },
-    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowPadding) },
-    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, WindowRounding) },
-    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowMinSize) },
-    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, ChildWindowRounding) },
-    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, FramePadding) },
-    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, FrameRounding) },
-    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemSpacing) },
-    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemInnerSpacing) },
-    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, IndentSpacing) },
-    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, GrabMinSize) },
-    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, ButtonTextAlign) },
+    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, Alpha) },                // ImGuiStyleVar_Alpha
+    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowPadding) },        // ImGuiStyleVar_WindowPadding
+    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, WindowRounding) },       // ImGuiStyleVar_WindowRounding
+    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, WindowMinSize) },        // ImGuiStyleVar_WindowMinSize
+    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, ChildWindowRounding) },  // ImGuiStyleVar_ChildWindowRounding
+    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, FramePadding) },         // ImGuiStyleVar_FramePadding
+    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, FrameRounding) },        // ImGuiStyleVar_FrameRounding
+    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemSpacing) },          // ImGuiStyleVar_ItemSpacing
+    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, ItemInnerSpacing) },     // ImGuiStyleVar_ItemInnerSpacing
+    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, IndentSpacing) },        // ImGuiStyleVar_IndentSpacing
+    { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, GrabMinSize) },          // ImGuiStyleVar_GrabMinSize
+    { ImGuiDataType_Float2, (ImU32)IM_OFFSETOF(ImGuiStyle, ButtonTextAlign) },      // ImGuiStyleVar_ButtonTextAlign
     { ImGuiDataType_Float,  (ImU32)IM_OFFSETOF(ImGuiStyle, ViewId) },
 };
 

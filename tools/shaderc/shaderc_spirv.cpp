@@ -12,13 +12,12 @@ BX_PRAGMA_DIAGNOSTIC_IGNORED_CLANG_GCC("-Wshadow") // warning: declaration of 'u
 #include <ShaderLang.h>
 #include <ResourceLimits.h>
 #include <SPIRV/SPVRemapper.h>
-//#include <spirv-tools/libspirv.hpp>
-//#include <spirv-tools/optimizer.hpp>
+#include <SPIRV/GlslangToSpv.h>
 BX_PRAGMA_DIAGNOSTIC_POP()
 
 namespace bgfx
 {
-	static bx::CrtAllocator s_allocator;
+	static bx::DefaultAllocator s_allocator;
 	bx::AllocatorI* g_allocator = &s_allocator;
 
 	struct TinyStlAllocator
@@ -49,12 +48,6 @@ namespace bgfx
 namespace stl = tinystl;
 
 #include "../../src/shader_spirv.h"
-
-namespace glslang
-{
-	void GlslangToSpv(const glslang::TIntermediate& _intermediate, std::vector<uint32_t>& _spirv);
-
-} // namespace glslang
 
 namespace bgfx { namespace spirv
 {
@@ -529,7 +522,7 @@ namespace bgfx { namespace spirv
 		virtual int32_t write(const void* _data, int32_t _size, bx::Error*) BX_OVERRIDE
 		{
 			char* out = (char*)alloca(_size + 1);
-			memcpy(out, _data, _size);
+			bx::memCopy(out, _data, _size);
 			out[_size] = '\0';
 			printf("%s", out);
 			return _size;
@@ -755,7 +748,7 @@ namespace bgfx { namespace spirv
 
 				if (optimized)
 				{
-					uint16_t shaderSize = (uint16_t)spirv.size()*sizeof(uint32_t);
+					uint32_t shaderSize = (uint32_t)spirv.size()*sizeof(uint32_t);
 					bx::write(_writer, shaderSize);
 					bx::write(_writer, spirv.data(), shaderSize);
 					uint8_t nul = 0;

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -45,9 +45,7 @@ namespace bgfx
 #endif // SHADERC_CONFIG_HLSL
 
 #include <alloca.h>
-#include <stdio.h>
 #include <stdint.h>
-#include <stdlib.h>
 #include <string.h>
 #include <algorithm>
 #include <string>
@@ -61,7 +59,7 @@ namespace bgfx
 #include <bx/uint32_t.h>
 #include <bx/string.h>
 #include <bx/hash.h>
-#include <bx/crtimpl.h>
+#include <bx/file.h>
 #include "../../src/vertexdecl.h"
 
 namespace bgfx
@@ -78,7 +76,7 @@ namespace bgfx
 		{
 		}
 
-		virtual int32_t read(void* _data, int32_t _size, bx::Error* _err) BX_OVERRIDE
+		virtual int32_t read(void* _data, int32_t _size, bx::Error* _err) override
 		{
 			if (m_str[m_pos] == '\0'
 			||  m_pos == m_size)
@@ -89,7 +87,7 @@ namespace bgfx
 
 			uint32_t pos = m_pos;
 			const char* str = &m_str[pos];
-			const char* nl = bx::strnl(str);
+			const char* nl = bx::strFindNl(str).getPtr();
 			pos += (uint32_t)(nl - str);
 
 			const char* eol = &m_str[pos];
@@ -107,6 +105,8 @@ namespace bgfx
 		uint32_t m_size;
 	};
 
+	bx::StringView nextWord(bx::StringView& _parse);
+
 #define BGFX_UNIFORM_FRAGMENTBIT UINT8_C(0x10)
 #define BGFX_UNIFORM_SAMPLERBIT  UINT8_C(0x20)
 
@@ -122,6 +122,42 @@ namespace bgfx
 		uint16_t regCount;
 	};
 
+	struct Options
+	{
+		Options();
+
+		void dump();
+
+		char shaderType;
+		std::string platform;
+		std::string profile;
+
+		std::string	inputFilePath;
+		std::string	outputFilePath;
+
+		std::vector<std::string> includeDirs;
+		std::vector<std::string> defines;
+		std::vector<std::string> dependencies;
+
+		bool disasm;
+		bool raw;
+		bool preprocessOnly;
+		bool depends;
+
+		bool debugInformation;
+
+		bool avoidFlowControl;
+		bool noPreshader;
+		bool partialPrecision;
+		bool preferFlowControl;
+		bool backwardsCompatibility;
+		bool warningsAreErrors;
+		bool keepIntermediate;
+
+		bool optimize;
+		uint32_t optimizationLevel;
+	};
+
 	typedef std::vector<Uniform> UniformArray;
 
 	void printCode(const char* _code, int32_t _line = 0, int32_t _start = 0, int32_t _end = INT32_MAX, int32_t _column = -1);
@@ -129,10 +165,12 @@ namespace bgfx
 	int32_t writef(bx::WriterI* _writer, const char* _format, ...);
 	void writeFile(const char* _filePath, const void* _data, int32_t _size);
 
-	bool compileGLSLShader(bx::CommandLine& _cmdLine, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
-	bool compileHLSLShader(bx::CommandLine& _cmdLine, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
-	bool compilePSSLShader(bx::CommandLine& _cmdLine, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
-	bool compileSPIRVShader(bx::CommandLine& _cmdLine, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
+	bool compileGLSLShader(const Options& _options, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
+	bool compileHLSLShader(const Options& _options, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
+	bool compilePSSLShader(const Options& _options, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
+	bool compileSPIRVShader(const Options& _options, uint32_t _version, const std::string& _code, bx::WriterI* _writer);
+
+	const char* getPsslPreamble();
 
 } // namespace bgfx
 

@@ -605,7 +605,7 @@ TextBufferManager::TextBufferManager(FontManager* _fontManager)
 		.add(bgfx::Attrib::Color0,    4, bgfx::AttribType::Uint8, true)
 		.end();
 
-	s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Int1);
+	s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 }
 
 TextBufferManager::~TextBufferManager()
@@ -613,11 +613,11 @@ TextBufferManager::~TextBufferManager()
 	BX_CHECK(m_textBufferHandles.getNumHandles() == 0, "All the text buffers must be destroyed before destroying the manager");
 	delete [] m_textBuffers;
 
-	bgfx::destroyUniform(s_texColor);
+	bgfx::destroy(s_texColor);
 
-	bgfx::destroyProgram(m_basicProgram);
-	bgfx::destroyProgram(m_distanceProgram);
-	bgfx::destroyProgram(m_distanceSubpixelProgram);
+	bgfx::destroy(m_basicProgram);
+	bgfx::destroy(m_distanceProgram);
+	bgfx::destroy(m_distanceSubpixelProgram);
 }
 
 TextBufferHandle TextBufferManager::createTextBuffer(uint32_t _type, BufferType::Enum _bufferType)
@@ -657,8 +657,8 @@ void TextBufferManager::destroyTextBuffer(TextBufferHandle _handle)
 			bgfx::VertexBufferHandle vbh;
 			ibh.idx = bc.indexBufferHandleIdx;
 			vbh.idx = bc.vertexBufferHandleIdx;
-			bgfx::destroyIndexBuffer(ibh);
-			bgfx::destroyVertexBuffer(vbh);
+			bgfx::destroy(ibh);
+			bgfx::destroy(vbh);
 		}
 
 		break;
@@ -668,8 +668,8 @@ void TextBufferManager::destroyTextBuffer(TextBufferHandle _handle)
 		bgfx::DynamicVertexBufferHandle vbh;
 		ibh.idx = bc.indexBufferHandleIdx;
 		vbh.idx = bc.vertexBufferHandleIdx;
-		bgfx::destroyDynamicIndexBuffer(ibh);
-		bgfx::destroyDynamicVertexBuffer(vbh);
+		bgfx::destroy(ibh);
+		bgfx::destroy(vbh);
 
 		break;
 
@@ -678,7 +678,7 @@ void TextBufferManager::destroyTextBuffer(TextBufferHandle _handle)
 	}
 }
 
-void TextBufferManager::submitTextBuffer(TextBufferHandle _handle, uint8_t _id, int32_t _depth)
+void TextBufferManager::submitTextBuffer(TextBufferHandle _handle, bgfx::ViewId _id, int32_t _depth)
 {
 	BX_CHECK(bgfx::isValid(_handle), "Invalid handle used");
 
@@ -700,7 +700,7 @@ void TextBufferManager::submitTextBuffer(TextBufferHandle _handle, uint8_t _id, 
 	case FONT_TYPE_ALPHA:
 		program = m_basicProgram;
 		bgfx::setState(0
-			| BGFX_STATE_RGB_WRITE
+			| BGFX_STATE_WRITE_RGB
 			| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA)
 			);
 		break;
@@ -708,7 +708,7 @@ void TextBufferManager::submitTextBuffer(TextBufferHandle _handle, uint8_t _id, 
 	case FONT_TYPE_DISTANCE:
 		program = m_distanceProgram;
 		bgfx::setState(0
-			| BGFX_STATE_RGB_WRITE
+			| BGFX_STATE_WRITE_RGB
 			| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA)
 			);
 		break;
@@ -716,7 +716,7 @@ void TextBufferManager::submitTextBuffer(TextBufferHandle _handle, uint8_t _id, 
 	case FONT_TYPE_DISTANCE_SUBPIXEL:
 		program = m_distanceSubpixelProgram;
 		bgfx::setState(0
-			| BGFX_STATE_RGB_WRITE
+			| BGFX_STATE_WRITE_RGB
 			| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_FACTOR, BGFX_STATE_BLEND_INV_SRC_COLOR)
 			, bc.textBuffer->getTextColor()
 			);
@@ -779,15 +779,17 @@ void TextBufferManager::submitTextBuffer(TextBufferHandle _handle, uint8_t _id, 
 				ibh.idx = bc.indexBufferHandleIdx;
 				vbh.idx = bc.vertexBufferHandleIdx;
 
-				bgfx::updateDynamicIndexBuffer(ibh
-						, 0
-						, bgfx::copy(bc.textBuffer->getIndexBuffer(), indexSize)
-						);
+				bgfx::update(
+					  ibh
+					, 0
+					, bgfx::copy(bc.textBuffer->getIndexBuffer(), indexSize)
+					);
 
-				bgfx::updateDynamicVertexBuffer(vbh
-						, 0
-						, bgfx::copy(bc.textBuffer->getVertexBuffer(), vertexSize)
-						);
+				bgfx::update(
+					  vbh
+					, 0
+					, bgfx::copy(bc.textBuffer->getVertexBuffer(), vertexSize)
+					);
 			}
 
 			bgfx::setVertexBuffer(0, vbh, 0, bc.textBuffer->getVertexCount() );

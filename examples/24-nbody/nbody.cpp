@@ -118,7 +118,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -127,8 +127,13 @@ public:
 		m_debug  = BGFX_DEBUG_NONE;
 		m_reset  = BGFX_RESET_VSYNC;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
@@ -142,12 +147,12 @@ public:
 			);
 
 		const bgfx::Caps* caps = bgfx::getCaps();
-		const bool computeSupported  = !!(caps->supported & BGFX_CAPS_COMPUTE);
-		const bool indirectSupported = !!(caps->supported & BGFX_CAPS_DRAW_INDIRECT);
+		m_computeSupported  = !!(caps->supported & BGFX_CAPS_COMPUTE);
+		m_indirectSupported = !!(caps->supported & BGFX_CAPS_DRAW_INDIRECT);
 
 		imguiCreate();
 
-		if (computeSupported)
+		if (m_computeSupported)
 		{
 			bgfx::VertexDecl quadVertexDecl;
 			quadVertexDecl.begin()
@@ -189,7 +194,7 @@ public:
 			m_indirectProgram = BGFX_INVALID_HANDLE;
 			m_indirectBuffer  = BGFX_INVALID_HANDLE;
 
-			if (indirectSupported)
+			if (m_indirectSupported)
 			{
 				m_indirectProgram = bgfx::createProgram(loadShader("cs_indirect"), true);
 				m_indirectBuffer  = bgfx::createIndirectBuffer(2);
@@ -202,9 +207,8 @@ public:
 			bgfx::setBuffer(1, m_currPositionBuffer0, bgfx::Access::Write);
 			bgfx::dispatch(0, m_initInstancesProgram, kMaxParticleCount / kThreadGroupUpdateSize, 1, 1);
 
-			float initialPos[3] = { 0.0f, 0.0f, -45.0f };
 			cameraCreate();
-			cameraSetPosition(initialPos);
+			cameraSetPosition({ 0.0f, 0.0f, -45.0f });
 			cameraSetVerticalAngle(0.0f);
 
 			m_useIndirect = false;
@@ -213,28 +217,31 @@ public:
 		}
 	}
 
-	virtual int shutdown() BX_OVERRIDE
+	virtual int shutdown() override
 	{
 		// Cleanup.
 		cameraDestroy();
 		imguiDestroy();
 
-		if (bgfx::isValid(m_indirectProgram) )
+		if (m_computeSupported)
 		{
-			bgfx::destroyProgram(m_indirectProgram);
-			bgfx::destroyIndirectBuffer(m_indirectBuffer);
-		}
+			if (m_indirectSupported)
+			{
+				bgfx::destroy(m_indirectProgram);
+				bgfx::destroy(m_indirectBuffer);
+			}
 
-		bgfx::destroyUniform(u_params);
-		bgfx::destroyDynamicVertexBuffer(m_currPositionBuffer0);
-		bgfx::destroyDynamicVertexBuffer(m_currPositionBuffer1);
-		bgfx::destroyDynamicVertexBuffer(m_prevPositionBuffer0);
-		bgfx::destroyDynamicVertexBuffer(m_prevPositionBuffer1);
-		bgfx::destroyProgram(m_updateInstancesProgram);
-		bgfx::destroyProgram(m_initInstancesProgram);
-		bgfx::destroyIndexBuffer(m_ibh);
-		bgfx::destroyVertexBuffer(m_vbh);
-		bgfx::destroyProgram(m_particleProgram);
+			bgfx::destroy(u_params);
+			bgfx::destroy(m_currPositionBuffer0);
+			bgfx::destroy(m_currPositionBuffer1);
+			bgfx::destroy(m_prevPositionBuffer0);
+			bgfx::destroy(m_prevPositionBuffer1);
+			bgfx::destroy(m_updateInstancesProgram);
+			bgfx::destroy(m_initInstancesProgram);
+			bgfx::destroy(m_ibh);
+			bgfx::destroy(m_vbh);
+			bgfx::destroy(m_particleProgram);
+		}
 
 		// Shutdown bgfx.
 		bgfx::shutdown();
@@ -242,7 +249,7 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	bool update() override
 	{
 		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -257,14 +264,13 @@ public:
 				, uint16_t(m_height)
 				);
 
-			showExampleDialog(this);
-
-			const bgfx::Caps* caps = bgfx::getCaps();
-			const bool computeSupported  = !!(caps->supported & BGFX_CAPS_COMPUTE);
-			const bool indirectSupported = !!(caps->supported & BGFX_CAPS_DRAW_INDIRECT);
+			showExampleDialog(this
+				, !m_computeSupported
+				? "Compute is not supported."
+				: NULL
+				);
 
 			int64_t now = bx::getHPCounter();
-			float time = (float)( (now - m_timeOffset)/double(bx::getHPFrequency() ) );
 			static int64_t last = now;
 			const int64_t frameTime = now - last;
 			last = now;
@@ -274,16 +280,19 @@ public:
 			// Set view 0 default viewport.
 			bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height) );
 
-			if (computeSupported)
+			if (m_computeSupported)
 			{
 				ImGui::SetNextWindowPos(
 					  ImVec2(m_width - m_width / 5.0f - 10.0f, 10.0f)
-					, ImGuiSetCond_FirstUseEver
+					, ImGuiCond_FirstUseEver
+					);
+				ImGui::SetNextWindowSize(
+					  ImVec2(m_width / 5.0f, m_height / 1.5f)
+					, ImGuiCond_FirstUseEver
 					);
 				ImGui::Begin("Settings"
 					, NULL
-					, ImVec2(m_width / 5.0f, m_height / 1.5f)
-					, ImGuiWindowFlags_AlwaysAutoResize
+					, 0
 					);
 
 				bool    reset = false;
@@ -318,7 +327,7 @@ public:
 
 				ImGui::Separator();
 
-				if (indirectSupported)
+				if (m_indirectSupported)
 				{
 					ImGui::Checkbox("Use draw/dispatch indirect", &m_useIndirect);
 				}
@@ -355,8 +364,8 @@ public:
 					bgfx::dispatch(0, m_updateInstancesProgram, uint16_t(m_paramsData.dispatchSize), 1, 1);
 				}
 
-				bx::xchg(m_currPositionBuffer0, m_currPositionBuffer1);
-				bx::xchg(m_prevPositionBuffer0, m_prevPositionBuffer1);
+				bx::swap(m_currPositionBuffer0, m_currPositionBuffer1);
+				bx::swap(m_prevPositionBuffer0, m_prevPositionBuffer1);
 
 				// Update camera.
 				cameraUpdate(deltaTime, m_mouseState);
@@ -365,30 +374,6 @@ public:
 				cameraGetViewMtx(view);
 
 				// Set view and projection matrix for view 0.
-				const bgfx::HMD* hmd = bgfx::getHMD();
-				if (NULL != hmd && 0 != (hmd->flags & BGFX_HMD_RENDERING) )
-				{
-					float viewHead[16];
-					float eye[3] = {};
-					bx::mtxQuatTranslationHMD(viewHead, hmd->eye[0].rotation, eye);
-
-					float tmp[16];
-					bx::mtxMul(tmp, view, viewHead);
-					bgfx::setViewTransform(
-						  0
-						, tmp
-						, hmd->eye[0].projection
-						, BGFX_VIEW_STEREO
-						, hmd->eye[1].projection
-						);
-
-					// Set view 0 default viewport.
-					//
-					// Use HMD's width/height since HMD's internal frame buffer size
-					// might be much larger than window size.
-					bgfx::setViewRect(0, 0, 0, hmd->width, hmd->height);
-				}
-				else
 				{
 					float proj[16];
 					bx::mtxProj(
@@ -415,7 +400,7 @@ public:
 
 				// Set render states.
 				bgfx::setState(0
-					| BGFX_STATE_RGB_WRITE
+					| BGFX_STATE_WRITE_RGB
 					| BGFX_STATE_BLEND_ADD
 					| BGFX_STATE_DEPTH_TEST_ALWAYS
 					);
@@ -429,15 +414,6 @@ public:
 				{
 					bgfx::submit(0, m_particleProgram);
 				}
-			}
-			else
-			{
-				bgfx::setViewRect(0, 0, 0, uint16_t(m_width), uint16_t(m_height) );
-
-				bool blink = uint32_t(time*3.0f)&1;
-				bgfx::dbgTextPrintf(0, 0, blink ? 0x1f : 0x01, " Compute is not supported by GPU. ");
-
-				bgfx::touch(0);
 			}
 
 			imguiEndFrame();
@@ -459,6 +435,8 @@ public:
 	uint32_t m_debug;
 	uint32_t m_reset;
 	bool m_useIndirect;
+	bool m_computeSupported;
+	bool m_indirectSupported;
 
 	ParamsData m_paramsData;
 

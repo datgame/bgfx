@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -9,6 +9,12 @@
 #include <bx/pixelformat.h>
 #include <bgfx/bgfx.h>
 #include <bimg/bimg.h>
+#include "bounds.h"
+
+#include <tinystl/allocator.h>
+#include <tinystl/vector.h>
+namespace stl = tinystl;
+
 
 ///
 void* load(const char* _filePath, uint32_t* _size = NULL);
@@ -23,7 +29,7 @@ bgfx::ShaderHandle loadShader(const char* _name);
 bgfx::ProgramHandle loadProgram(const char* _vsName, const char* _fsName);
 
 ///
-bgfx::TextureHandle loadTexture(const char* _name, uint32_t _flags = BGFX_TEXTURE_NONE, uint8_t _skip = 0, bgfx::TextureInfo* _info = NULL);
+bgfx::TextureHandle loadTexture(const char* _name, uint64_t _flags = BGFX_TEXTURE_NONE|BGFX_SAMPLER_NONE, uint8_t _skip = 0, bgfx::TextureInfo* _info = NULL, bimg::Orientation::Enum* _orientation = NULL);
 
 ///
 bimg::ImageContainer* imageLoad(const char* _filePath, bgfx::TextureFormat::Enum _dstFormat);
@@ -41,7 +47,7 @@ void calcTangents(void* _vertices, uint16_t _numVertices, bgfx::VertexDecl _decl
 inline bool checkAvailTransientBuffers(uint32_t _numVertices, const bgfx::VertexDecl& _decl, uint32_t _numIndices)
 {
 	return _numVertices == bgfx::getAvailTransientVertexBuffer(_numVertices, _decl)
-		&& _numIndices  == bgfx::getAvailTransientIndexBuffer(_numIndices)
+		&& (0 == _numIndices || _numIndices == bgfx::getAvailTransientIndexBuffer(_numIndices) )
 		;
 }
 
@@ -75,13 +81,54 @@ struct MeshState
 	uint64_t            m_state;
 	bgfx::ProgramHandle m_program;
 	uint8_t             m_numTextures;
-	uint8_t             m_viewId;
+	bgfx::ViewId        m_viewId;
 };
 
-struct Mesh;
+struct Primitive
+{
+	uint32_t m_startIndex;
+	uint32_t m_numIndices;
+	uint32_t m_startVertex;
+	uint32_t m_numVertices;
+	
+	Sphere m_sphere;
+	Aabb m_aabb;
+	Obb m_obb;
+};
+
+typedef stl::vector<Primitive> PrimitiveArray;
+
+struct Group
+{
+	Group();
+	void reset();
+	
+	bgfx::VertexBufferHandle m_vbh;
+	bgfx::IndexBufferHandle m_ibh;
+	uint16_t m_numVertices;
+	uint8_t* m_vertices;
+	uint32_t m_numIndices;
+	uint16_t* m_indices;
+	Sphere m_sphere;
+	Aabb m_aabb;
+	Obb m_obb;
+	PrimitiveArray m_prims;
+};
+typedef stl::vector<Group> GroupArray;
+
+struct Mesh
+{
+	void load(bx::ReaderSeekerI* _reader, bool _ramcopy);
+	void unload();
+	void submit(bgfx::ViewId _id, bgfx::ProgramHandle _program, const float* _mtx, uint64_t _state) const;
+	void submit(const MeshState*const* _state, uint8_t _numPasses, const float* _mtx, uint16_t _numMatrices) const;
+
+	bgfx::VertexDecl m_decl;
+	GroupArray m_groups;
+};
 
 ///
-Mesh* meshLoad(const char* _filePath);
+Mesh* meshLoad(const char* _filePath, bool _ramcopy = false);
 
 ///
 void meshUnload(Mesh* _mesh);
@@ -93,7 +140,7 @@ MeshState* meshStateCreate();
 void meshStateDestroy(MeshState* _meshState);
 
 ///
-void meshSubmit(const Mesh* _mesh, uint8_t _id, bgfx::ProgramHandle _program, const float* _mtx, uint64_t _state = BGFX_STATE_MASK);
+void meshSubmit(const Mesh* _mesh, bgfx::ViewId _id, bgfx::ProgramHandle _program, const float* _mtx, uint64_t _state = BGFX_STATE_MASK);
 
 ///
 void meshSubmit(const Mesh* _mesh, const MeshState*const* _state, uint8_t _numPasses, const float* _mtx, uint16_t _numMatrices = 1);

@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -8,12 +8,14 @@
 #include "imgui/imgui.h"
 
 #include <bx/allocator.h>
+#include <bx/file.h>
 #include <bx/string.h>
-#include <bx/crtimpl.h>
 
 #include "aviwriter.h"
 
 #include <inttypes.h>
+
+#include <bimg/bimg.h>
 
 namespace
 {
@@ -67,46 +69,14 @@ static const uint16_t s_cubeIndices[36] =
 	6, 3, 7,
 };
 
-void imageWriteTga(bx::WriterI* _writer, uint32_t _width, uint32_t _height, uint32_t _pitch, const void* _src, bool _grayscale, bool _yflip, bx::Error* _err)
+void savePng(const char* _filePath, uint32_t _width, uint32_t _height, uint32_t _srcPitch, const void* _src, bimg::TextureFormat::Enum _format, bool _yflip)
 {
-	BX_ERROR_SCOPE(_err);
-
-	uint8_t type = _grayscale ? 3 :  2;
-	uint8_t bpp  = _grayscale ? 8 : 32;
-
-	uint8_t header[18] = {};
-	header[ 2] = type;
-	header[12] =  _width     &0xff;
-	header[13] = (_width >>8)&0xff;
-	header[14] =  _height    &0xff;
-	header[15] = (_height>>8)&0xff;
-	header[16] = bpp;
-	header[17] = 32;
-
-	bx::write(_writer, header, sizeof(header), _err);
-
-	uint32_t dstPitch = _width*bpp/8;
-	if (_yflip)
+	bx::FileWriter writer;
+	bx::Error err;
+	if (bx::open(&writer, _filePath, false, &err) )
 	{
-		uint8_t* data = (uint8_t*)_src + _pitch*_height - _pitch;
-		for (uint32_t yy = 0; yy < _height; ++yy)
-		{
-			bx::write(_writer, data, dstPitch, _err);
-			data -= _pitch;
-		}
-	}
-	else if (_pitch == dstPitch)
-	{
-		bx::write(_writer, _src, _height*_pitch, _err);
-	}
-	else
-	{
-		uint8_t* data = (uint8_t*)_src;
-		for (uint32_t yy = 0; yy < _height; ++yy)
-		{
-			bx::write(_writer, data, dstPitch, _err);
-			data += _pitch;
-		}
+		bimg::imageWritePng(&writer, _width, _height, _srcPitch, _src, _format, _yflip, &err);
+		bx::close(&writer);
 	}
 }
 
@@ -116,7 +86,7 @@ void saveTga(const char* _filePath, uint32_t _width, uint32_t _height, uint32_t 
 	bx::Error err;
 	if (bx::open(&writer, _filePath, false, &err) )
 	{
-		imageWriteTga(&writer, _width, _height, _srcPitch, _src, _grayscale, _yflip, &err);
+		bimg::imageWriteTga(&writer, _width, _height, _srcPitch, _src, _grayscale, _yflip, &err);
 		bx::close(&writer);
 	}
 }
@@ -127,8 +97,10 @@ struct BgfxCallback : public bgfx::CallbackI
 	{
 	}
 
-	virtual void fatal(bgfx::Fatal::Enum _code, const char* _str) BX_OVERRIDE
+	virtual void fatal(const char* _filePath, uint16_t _line, bgfx::Fatal::Enum _code, const char* _str) override
 	{
+		BX_UNUSED(_filePath, _line);
+
 		// Something unexpected happened, inform user and bail out.
 		bx::debugPrintf("Fatal error: 0x%08x: %s", _code, _str);
 
@@ -136,13 +108,25 @@ struct BgfxCallback : public bgfx::CallbackI
 		abort();
 	}
 
-	virtual void traceVargs(const char* _filePath, uint16_t _line, const char* _format, va_list _argList) BX_OVERRIDE
+	virtual void traceVargs(const char* _filePath, uint16_t _line, const char* _format, va_list _argList) override
 	{
 		bx::debugPrintf("%s (%d): ", _filePath, _line);
 		bx::debugPrintfVargs(_format, _argList);
 	}
 
-	virtual uint32_t cacheReadSize(uint64_t _id) BX_OVERRIDE
+	virtual void profilerBegin(const char* /*_name*/, uint32_t /*_abgr*/, const char* /*_filePath*/, uint16_t /*_line*/) override
+	{
+	}
+
+	virtual void profilerBeginLiteral(const char* /*_name*/, uint32_t /*_abgr*/, const char* /*_filePath*/, uint16_t /*_line*/) override
+	{
+	}
+
+	virtual void profilerEnd() override
+	{
+	}
+
+	virtual uint32_t cacheReadSize(uint64_t _id) override
 	{
 		char filePath[256];
 		bx::snprintf(filePath, sizeof(filePath), "temp/%016" PRIx64, _id);
@@ -162,7 +146,7 @@ struct BgfxCallback : public bgfx::CallbackI
 		return 0;
 	}
 
-	virtual bool cacheRead(uint64_t _id, void* _data, uint32_t _size) BX_OVERRIDE
+	virtual bool cacheRead(uint64_t _id, void* _data, uint32_t _size) override
 	{
 		char filePath[256];
 		bx::snprintf(filePath, sizeof(filePath), "temp/%016" PRIx64, _id);
@@ -184,7 +168,7 @@ struct BgfxCallback : public bgfx::CallbackI
 		return false;
 	}
 
-	virtual void cacheWrite(uint64_t _id, const void* _data, uint32_t _size) BX_OVERRIDE
+	virtual void cacheWrite(uint64_t _id, const void* _data, uint32_t _size) override
 	{
 		char filePath[256];
 		bx::snprintf(filePath, sizeof(filePath), "temp/%016" PRIx64, _id);
@@ -200,16 +184,20 @@ struct BgfxCallback : public bgfx::CallbackI
 		}
 	}
 
-	virtual void screenShot(const char* _filePath, uint32_t _width, uint32_t _height, uint32_t _pitch, const void* _data, uint32_t /*_size*/, bool _yflip) BX_OVERRIDE
+	virtual void screenShot(const char* _filePath, uint32_t _width, uint32_t _height, uint32_t _pitch, const void* _data, uint32_t /*_size*/, bool _yflip) override
 	{
 		char temp[1024];
+
+		// Save screen shot as PNG.
+		bx::snprintf(temp, BX_COUNTOF(temp), "%s.png", _filePath);
+		savePng(temp, _width, _height, _pitch, _data, bimg::TextureFormat::BGRA8, _yflip);
 
 		// Save screen shot as TGA.
 		bx::snprintf(temp, BX_COUNTOF(temp), "%s.tga", _filePath);
 		saveTga(temp, _width, _height, _pitch, _data, false, _yflip);
 	}
 
-	virtual void captureBegin(uint32_t _width, uint32_t _height, uint32_t /*_pitch*/, bgfx::TextureFormat::Enum /*_format*/, bool _yflip) BX_OVERRIDE
+	virtual void captureBegin(uint32_t _width, uint32_t _height, uint32_t /*_pitch*/, bgfx::TextureFormat::Enum /*_format*/, bool _yflip) override
 	{
 		m_writer = BX_NEW(entry::getAllocator(), AviWriter)(entry::getFileWriter() );
 		if (!m_writer->open("temp/capture.avi", _width, _height, 60, _yflip) )
@@ -219,7 +207,7 @@ struct BgfxCallback : public bgfx::CallbackI
 		}
 	}
 
-	virtual void captureEnd() BX_OVERRIDE
+	virtual void captureEnd() override
 	{
 		if (NULL != m_writer)
 		{
@@ -229,7 +217,7 @@ struct BgfxCallback : public bgfx::CallbackI
 		}
 	}
 
-	virtual void captureFrame(const void* _data, uint32_t /*_size*/) BX_OVERRIDE
+	virtual void captureFrame(const void* _data, uint32_t /*_size*/) override
 	{
 		if (NULL != m_writer)
 		{
@@ -239,6 +227,8 @@ struct BgfxCallback : public bgfx::CallbackI
 
 	AviWriter* m_writer;
 };
+
+const size_t kNaturalAlignment = 8;
 
 class BgfxAllocator : public bx::AllocatorI
 {
@@ -253,13 +243,13 @@ public:
 	{
 	}
 
-	virtual void* realloc(void* _ptr, size_t _size, size_t _align, const char* _file, uint32_t _line) BX_OVERRIDE
+	virtual void* realloc(void* _ptr, size_t _size, size_t _align, const char* _file, uint32_t _line) override
 	{
 		if (0 == _size)
 		{
 			if (NULL != _ptr)
 			{
-				if (BX_CONFIG_ALLOCATOR_NATURAL_ALIGNMENT >= _align)
+				if (kNaturalAlignment >= _align)
 				{
 					bx::debugPrintf("%s(%d): FREE %p\n", _file, _line, _ptr);
 					::free(_ptr);
@@ -275,7 +265,7 @@ public:
 		}
 		else if (NULL == _ptr)
 		{
-			if (BX_CONFIG_ALLOCATOR_NATURAL_ALIGNMENT >= _align)
+			if (kNaturalAlignment >= _align)
 			{
 				void* ptr = ::malloc(_size);
 				bx::debugPrintf("%s(%d): ALLOC %p of %d byte(s)\n", _file, _line, ptr, _size);
@@ -287,7 +277,7 @@ public:
 			return bx::alignedAlloc(this, _size, _align, _file, _line);
 		}
 
-		if (BX_CONFIG_ALLOCATOR_NATURAL_ALIGNMENT >= _align)
+		if (kNaturalAlignment >= _align)
 		{
 			void* ptr = ::realloc(_ptr, _size);
 			bx::debugPrintf("%s(%d): REALLOC %p (old %p) of %d byte(s)\n", _file, _line, ptr, _ptr, _size);
@@ -322,7 +312,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -335,20 +325,18 @@ public:
 			| BGFX_RESET_MSAA_X16
 			;
 
-		bgfx::init(
-			  args.m_type
-			, args.m_pciId
-			, 0
-			, &m_callback  // custom callback handler
-			, &m_allocator // custom allocator
-			);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		init.callback  = &m_callback;  // custom callback handler
+		init.allocator = &m_allocator; // custom allocator
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
-
-		// Set view 0 default viewport.
-		bgfx::setViewRect(0, 0, 0, 1280, 720);
 
 		// Set view 0 clear state.
 		bgfx::setViewClear(0
@@ -379,14 +367,14 @@ public:
 		imguiCreate();
 	}
 
-	virtual int shutdown() BX_OVERRIDE
+	virtual int shutdown() override
 	{
 		imguiDestroy();
 
 		// Cleanup.
-		bgfx::destroyIndexBuffer(m_ibh);
-		bgfx::destroyVertexBuffer(m_vbh);
-		bgfx::destroyProgram(m_program);
+		bgfx::destroy(m_ibh);
+		bgfx::destroy(m_vbh);
+		bgfx::destroy(m_program);
 
 		// Shutdown bgfx.
 		bgfx::shutdown();
@@ -396,7 +384,7 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	bool update() override
 	{
 		bool exit = false;
 
@@ -428,12 +416,15 @@ public:
 
 		if (!exit)
 		{
+			// Set view 0 default viewport.
+			bgfx::setViewRect(0, 0, 0, bgfx::BackbufferRatio::Equal);
+
 			// This dummy draw call is here to make sure that view 0 is cleared
 			// if no other draw calls are submitted to view 0.
 			bgfx::touch(0);
 
-			float at[3]  = { 0.0f, 0.0f,   0.0f };
-			float eye[3] = { 0.0f, 0.0f, -35.0f };
+			const bx::Vec3 at  = { 0.0f, 0.0f,   0.0f };
+			const bx::Vec3 eye = { 0.0f, 0.0f, -35.0f };
 
 			float view[16];
 			float proj[16];

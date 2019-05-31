@@ -34,7 +34,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -43,8 +43,13 @@ public:
 		m_debug  = BGFX_DEBUG_NONE;
 		m_reset  = BGFX_RESET_VSYNC;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
@@ -57,8 +62,8 @@ public:
 			, 0
 			);
 
-		s_texColor   = bgfx::createUniform("s_texColor",   bgfx::UniformType::Int1);
-		s_texStipple = bgfx::createUniform("s_texStipple", bgfx::UniformType::Int1);
+		s_texColor   = bgfx::createUniform("s_texColor",   bgfx::UniformType::Sampler);
+		s_texStipple = bgfx::createUniform("s_texStipple", bgfx::UniformType::Sampler);
 		u_stipple    = bgfx::createUniform("u_stipple",    bgfx::UniformType::Vec4);
 
 		m_program = loadProgram("vs_tree", "fs_tree");
@@ -76,7 +81,7 @@ public:
 
 		m_textureStipple = bgfx::createTexture2D(8, 4, false, 1
 			, bgfx::TextureFormat::R8
-			, BGFX_TEXTURE_MAG_POINT|BGFX_TEXTURE_MIN_POINT
+			, BGFX_SAMPLER_MAG_POINT|BGFX_SAMPLER_MIN_POINT
 			, stippleTex
 			);
 
@@ -99,7 +104,7 @@ public:
 		m_targetLod       = 0;
 	}
 
-	virtual int shutdown() BX_OVERRIDE
+	virtual int shutdown() override
 	{
 		imguiDestroy();
 
@@ -110,15 +115,15 @@ public:
 		}
 
 		// Cleanup.
-		bgfx::destroyProgram(m_program);
+		bgfx::destroy(m_program);
 
-		bgfx::destroyUniform(s_texColor);
-		bgfx::destroyUniform(s_texStipple);
-		bgfx::destroyUniform(u_stipple);
+		bgfx::destroy(s_texColor);
+		bgfx::destroy(s_texStipple);
+		bgfx::destroy(u_stipple);
 
-		bgfx::destroyTexture(m_textureStipple);
-		bgfx::destroyTexture(m_textureLeafs);
-		bgfx::destroyTexture(m_textureBark);
+		bgfx::destroy(m_textureStipple);
+		bgfx::destroy(m_textureLeafs);
+		bgfx::destroy(m_textureBark);
 
 		// Shutdown bgfx.
 		bgfx::shutdown();
@@ -126,7 +131,7 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	bool update() override
 	{
 		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -144,12 +149,15 @@ public:
 
 			ImGui::SetNextWindowPos(
 				  ImVec2(m_width - m_width / 5.0f - 10.0f, 10.0f)
-				, ImGuiSetCond_FirstUseEver
+				, ImGuiCond_FirstUseEver
+				);
+			ImGui::SetNextWindowSize(
+				  ImVec2(m_width / 5.0f, m_height / 2.0f)
+				, ImGuiCond_FirstUseEver
 				);
 			ImGui::Begin("Settings"
 				, NULL
-				, ImVec2(m_width / 5.0f, m_height / 6.0f)
-				, ImGuiWindowFlags_AlwaysAutoResize
+				, 0
 				);
 
 			ImGui::Checkbox("Transition", &m_transitions);
@@ -168,24 +176,10 @@ public:
 			// if no other draw calls are submitted to view 0.
 			bgfx::touch(0);
 
-			float at[3]  = { 0.0f, 1.0f,      0.0f };
-			float eye[3] = { 0.0f, 2.0f, -distance };
+			const bx::Vec3 at  = { 0.0f, 1.0f,      0.0f };
+			const bx::Vec3 eye = { 0.0f, 2.0f, -distance };
 
 			// Set view and projection matrix for view 0.
-			const bgfx::HMD* hmd = bgfx::getHMD();
-			if (NULL != hmd && 0 != (hmd->flags & BGFX_HMD_RENDERING) )
-			{
-				float view[16];
-				bx::mtxQuatTranslationHMD(view, hmd->eye[0].rotation, eye);
-				bgfx::setViewTransform(0, view, hmd->eye[0].projection, BGFX_VIEW_STEREO, hmd->eye[1].projection);
-
-				// Set view 0 default viewport.
-				//
-				// Use HMD's m_width/m_height since HMD's internal frame buffer size
-				// might be much larger than window size.
-				bgfx::setViewRect(0, 0, 0, hmd->width, hmd->height);
-			}
-			else
 			{
 				float view[16];
 				bx::mtxLookAt(view, eye, at);
@@ -216,8 +210,8 @@ public:
 			stippleInv[2] = (float(m_transitionFrame)*4.0f/255.0f) - (1.0f/255.0f);
 
 			const uint64_t stateTransparent = 0
-				| BGFX_STATE_RGB_WRITE
-				| BGFX_STATE_ALPHA_WRITE
+				| BGFX_STATE_WRITE_RGB
+				| BGFX_STATE_WRITE_A
 				| BGFX_STATE_DEPTH_TEST_LESS
 				| BGFX_STATE_CULL_CCW
 				| BGFX_STATE_MSAA
@@ -251,12 +245,12 @@ public:
 			}
 
 			int lod = 0;
-			if (eye[2] < -2.5f)
+			if (eye.z < -2.5f)
 			{
 				lod = 1;
 			}
 
-			if (eye[2] < -5.0f)
+			if (eye.z < -5.0f)
 			{
 				lod = 2;
 			}

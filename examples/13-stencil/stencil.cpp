@@ -8,8 +8,8 @@
 
 #include "common.h"
 #include "bgfx_utils.h"
+#include <bx/file.h>
 
-#include <bx/crtimpl.h>
 #include "camera.h"
 #include "imgui/imgui.h"
 
@@ -131,8 +131,9 @@ static bgfx::UniformHandle s_texColor;
 
 void setViewClearMask(uint32_t _viewMask, uint8_t _flags, uint32_t _rgba, float _depth, uint8_t _stencil)
 {
-	for (uint32_t view = 0, viewMask = _viewMask, ntz = bx::uint32_cnttz(_viewMask); 0 != viewMask; viewMask >>= 1, view += 1, ntz = bx::uint32_cnttz(viewMask) )
+	for (uint32_t view = 0, viewMask = _viewMask; 0 != viewMask; viewMask >>= 1, view += 1 )
 	{
+		const uint32_t ntz = bx::uint32_cnttz(viewMask);
 		viewMask >>= ntz;
 		view += ntz;
 
@@ -142,8 +143,9 @@ void setViewClearMask(uint32_t _viewMask, uint8_t _flags, uint32_t _rgba, float 
 
 void setViewTransformMask(uint32_t _viewMask, const void* _view, const void* _proj)
 {
-	for (uint32_t view = 0, viewMask = _viewMask, ntz = bx::uint32_cnttz(_viewMask); 0 != viewMask; viewMask >>= 1, view += 1, ntz = bx::uint32_cnttz(viewMask) )
+	for (uint32_t view = 0, viewMask = _viewMask; 0 != viewMask; viewMask >>= 1, view += 1 )
 	{
+        const uint32_t ntz = bx::uint32_cnttz(viewMask);
 		viewMask >>= ntz;
 		view += ntz;
 
@@ -153,8 +155,9 @@ void setViewTransformMask(uint32_t _viewMask, const void* _view, const void* _pr
 
 void setViewRectMask(uint32_t _viewMask, uint16_t _x, uint16_t _y, uint16_t _width, uint16_t _height)
 {
-	for (uint32_t view = 0, viewMask = _viewMask, ntz = bx::uint32_cnttz(_viewMask); 0 != viewMask; viewMask >>= 1, view += 1, ntz = bx::uint32_cnttz(viewMask) )
+	for (uint32_t view = 0, viewMask = _viewMask; 0 != viewMask; viewMask >>= 1, view += 1 )
 	{
+        const uint32_t ntz = bx::uint32_cnttz(viewMask);
 		viewMask >>= ntz;
 		view += ntz;
 
@@ -162,40 +165,39 @@ void setViewRectMask(uint32_t _viewMask, uint16_t _x, uint16_t _y, uint16_t _wid
 	}
 }
 
-void mtxReflected(float*__restrict _result
-				  , const float* __restrict _p  /* plane */
-				  , const float* __restrict _n  /* normal */
-				  )
+void mtxReflected(float* _result, const bx::Vec3& _pos, const bx::Vec3& _normal)
 {
-	float dot = bx::vec3Dot(_p, _n);
+	const float nx = _normal.x;
+	const float ny = _normal.y;
+	const float nz = _normal.z;
 
-	_result[ 0] =  1.0f -  2.0f * _n[0] * _n[0]; //1-2Nx^2
-	_result[ 1] = -2.0f * _n[0] * _n[1];         //-2*Nx*Ny
-	_result[ 2] = -2.0f * _n[0] * _n[2];         //-2*NxNz
-	_result[ 3] =  0.0f;                         //0
+	_result[ 0] =  1.0f - 2.0f * nx * nx;
+	_result[ 1] =       - 2.0f * nx * ny;
+	_result[ 2] =       - 2.0f * nx * nz;
+	_result[ 3] =  0.0f;
 
-	_result[ 4] = -2.0f * _n[0] * _n[1];         //-2*NxNy
-	_result[ 5] =  1.0f -  2.0f * _n[1] * _n[1]; //1-2*Ny^2
-	_result[ 6] = -2.0f * _n[1] * _n[2];         //-2*NyNz
-	_result[ 7] =  0.0f;                         //0
+	_result[ 4] =       - 2.0f * nx * ny;
+	_result[ 5] =  1.0f - 2.0f * ny * ny;
+	_result[ 6] =       - 2.0f * ny * nz;
+	_result[ 7] =  0.0f;
 
-	_result[ 8] = -2.0f * _n[0] * _n[2];         //-2*NxNz
-	_result[ 9] = -2.0f * _n[1] * _n[2];         //-2NyNz
-	_result[10] =  1.0f -  2.0f * _n[2] * _n[2]; //1-2*Nz^2
-	_result[11] =  0.0f;                         //0
+	_result[ 8] =       - 2.0f * nx * nz;
+	_result[ 9] =       - 2.0f * ny * nz;
+	_result[10] =  1.0f - 2.0f * nz * nz;
+	_result[11] =  0.0f;
 
-	_result[12] =  2.0f * dot * _n[0];           //2*dot*Nx
-	_result[13] =  2.0f * dot * _n[1];           //2*dot*Ny
-	_result[14] =  2.0f * dot * _n[2];           //2*dot*Nz
-	_result[15] =  1.0f;                         //1
+	const float dot = bx::dot(_pos, _normal);
+
+	_result[12] =  2.0f * dot * nx;
+	_result[13] =  2.0f * dot * ny;
+	_result[14] =  2.0f * dot * nz;
+	_result[15] =  1.0f;
 }
 
-void mtxShadow(float* __restrict _result
-			   , const float* __restrict _ground
-			   , const float* __restrict _light
-			   )
+void mtxShadow(float* _result, const float* _ground, const float* _light)
 {
-	float dot = _ground[0] * _light[0]
+	const float dot =
+		  _ground[0] * _light[0]
 		+ _ground[1] * _light[1]
 		+ _ground[2] * _light[2]
 		+ _ground[3] * _light[3]
@@ -222,10 +224,7 @@ void mtxShadow(float* __restrict _result
 	_result[15] =  dot - _light[3] * _ground[3];
 }
 
-void mtxBillboard(float* __restrict _result
-				  , const float* __restrict _view
-				  , const float* __restrict _pos
-				  , const float* __restrict _scale)
+void mtxBillboard(float* _result, const float* _view, const float* _pos, const float* _scale)
 {
 	_result[ 0] = _view[0]  * _scale[0];
 	_result[ 1] = _view[4]  * _scale[0];
@@ -317,13 +316,13 @@ struct Uniforms
 
 	void destroy()
 	{
-		bgfx::destroyUniform(u_params);
-		bgfx::destroyUniform(u_ambient);
-		bgfx::destroyUniform(u_diffuse);
-		bgfx::destroyUniform(u_specular_shininess);
-		bgfx::destroyUniform(u_color);
-		bgfx::destroyUniform(u_lightPosRadius);
-		bgfx::destroyUniform(u_lightRgbInnerR);
+		bgfx::destroy(u_params);
+		bgfx::destroy(u_ambient);
+		bgfx::destroy(u_diffuse);
+		bgfx::destroy(u_specular_shininess);
+		bgfx::destroy(u_color);
+		bgfx::destroy(u_lightPosRadius);
+		bgfx::destroy(u_lightRgbInnerR);
 	}
 
 	struct Params
@@ -401,8 +400,8 @@ struct RenderState
 static RenderState s_renderStates[RenderState::Count] =
 {
 	{ // StencilReflection_CraftStencil
-		BGFX_STATE_RGB_WRITE
-		| BGFX_STATE_DEPTH_WRITE
+		BGFX_STATE_WRITE_RGB
+		| BGFX_STATE_WRITE_Z
 		| BGFX_STATE_DEPTH_TEST_LESS
 		| BGFX_STATE_MSAA
 		, UINT32_MAX
@@ -415,10 +414,10 @@ static RenderState s_renderStates[RenderState::Count] =
 		, BGFX_STENCIL_NONE
 	},
 	{ // StencilReflection_DrawReflected
-		BGFX_STATE_RGB_WRITE
-		| BGFX_STATE_ALPHA_WRITE
+		BGFX_STATE_WRITE_RGB
+		| BGFX_STATE_WRITE_A
 		| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_ALPHA, BGFX_STATE_BLEND_INV_SRC_ALPHA)
-		| BGFX_STATE_DEPTH_WRITE
+		| BGFX_STATE_WRITE_Z
 		| BGFX_STATE_DEPTH_TEST_LESS
 		| BGFX_STATE_CULL_CW    //reflection matrix has inverted normals. using CCW instead of CW.
 		| BGFX_STATE_MSAA
@@ -432,8 +431,8 @@ static RenderState s_renderStates[RenderState::Count] =
 		, BGFX_STENCIL_NONE
 	},
 	{ // StencilReflection_BlendPlane
-		BGFX_STATE_RGB_WRITE
-		| BGFX_STATE_DEPTH_WRITE
+		BGFX_STATE_WRITE_RGB
+		| BGFX_STATE_WRITE_Z
 		| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_SRC_COLOR)
 		| BGFX_STATE_DEPTH_TEST_LESS
 		| BGFX_STATE_CULL_CCW
@@ -443,8 +442,8 @@ static RenderState s_renderStates[RenderState::Count] =
 		, BGFX_STENCIL_NONE
 	},
 	{ // StencilReflection_DrawScene
-		BGFX_STATE_RGB_WRITE
-		| BGFX_STATE_DEPTH_WRITE
+		BGFX_STATE_WRITE_RGB
+		| BGFX_STATE_WRITE_Z
 		| BGFX_STATE_DEPTH_TEST_LESS
 		| BGFX_STATE_CULL_CCW
 		| BGFX_STATE_MSAA
@@ -453,8 +452,8 @@ static RenderState s_renderStates[RenderState::Count] =
 		, BGFX_STENCIL_NONE
 	},
 	{ // ProjectionShadows_DrawAmbient
-		BGFX_STATE_RGB_WRITE
-		| BGFX_STATE_DEPTH_WRITE // write depth !
+		BGFX_STATE_WRITE_RGB
+		| BGFX_STATE_WRITE_Z // write depth !
 		| BGFX_STATE_DEPTH_TEST_LESS
 		| BGFX_STATE_CULL_CCW
 		| BGFX_STATE_MSAA
@@ -475,7 +474,7 @@ static RenderState s_renderStates[RenderState::Count] =
 		, BGFX_STENCIL_NONE
 	},
 	{ // ProjectionShadows_DrawDiffuse
-		BGFX_STATE_RGB_WRITE
+		BGFX_STATE_WRITE_RGB
 		| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_ONE, BGFX_STATE_BLEND_ONE)
 		| BGFX_STATE_DEPTH_TEST_EQUAL
 		| BGFX_STATE_CULL_CCW
@@ -490,9 +489,9 @@ static RenderState s_renderStates[RenderState::Count] =
 		, BGFX_STENCIL_NONE
 	},
 	{ // Custom_BlendLightTexture
-		BGFX_STATE_RGB_WRITE
-		| BGFX_STATE_ALPHA_WRITE
-		| BGFX_STATE_DEPTH_WRITE
+		BGFX_STATE_WRITE_RGB
+		| BGFX_STATE_WRITE_A
+		| BGFX_STATE_WRITE_Z
 		| BGFX_STATE_DEPTH_TEST_LESS
 		| BGFX_STATE_BLEND_FUNC(BGFX_STATE_BLEND_SRC_COLOR, BGFX_STATE_BLEND_INV_SRC_COLOR)
 		| BGFX_STATE_CULL_CCW
@@ -502,7 +501,7 @@ static RenderState s_renderStates[RenderState::Count] =
 		, BGFX_STENCIL_NONE
 	},
 	{ // Custom_DrawPlaneBottom
-		BGFX_STATE_RGB_WRITE
+		BGFX_STATE_WRITE_RGB
 		| BGFX_STATE_CULL_CW
 		| BGFX_STATE_MSAA
 		, UINT32_MAX
@@ -542,7 +541,7 @@ struct ClearValues
 	uint8_t  m_clearStencil;
 };
 
-void clearView(uint8_t _id, uint8_t _flags, const ClearValues& _clearValues)
+void clearView(bgfx::ViewId _id, uint8_t _flags, const ClearValues& _clearValues)
 {
 	bgfx::setViewClear(_id
 		, _flags
@@ -736,23 +735,23 @@ struct Mesh
 		for (GroupArray::const_iterator it = m_groups.begin(), itEnd = m_groups.end(); it != itEnd; ++it)
 		{
 			const Group& group = *it;
-			bgfx::destroyVertexBuffer(group.m_vbh);
+			bgfx::destroy(group.m_vbh);
 
 			if (bgfx::isValid(group.m_ibh) )
 			{
-				bgfx::destroyIndexBuffer(group.m_ibh);
+				bgfx::destroy(group.m_ibh);
 			}
 		}
 		m_groups.clear();
 	}
 
-	void submit(uint8_t _viewId, float* _mtx, bgfx::ProgramHandle _program, const RenderState& _renderState)
+	void submit(bgfx::ViewId _id, float* _mtx, bgfx::ProgramHandle _program, const RenderState& _renderState)
 	{
 		bgfx::TextureHandle texture = BGFX_INVALID_HANDLE;
-		submit(_viewId, _mtx, _program, _renderState, texture);
+		submit(_id, _mtx, _program, _renderState, texture);
 	}
 
-	void submit(uint8_t _viewId, float* _mtx, bgfx::ProgramHandle _program, const RenderState& _renderState, bgfx::TextureHandle _texture)
+	void submit(bgfx::ViewId _id, float* _mtx, bgfx::ProgramHandle _program, const RenderState& _renderState, bgfx::TextureHandle _texture)
 	{
 		for (GroupArray::const_iterator it = m_groups.begin(), itEnd = m_groups.end(); it != itEnd; ++it)
 		{
@@ -774,10 +773,10 @@ struct Mesh
 			bgfx::setState(_renderState.m_state, _renderState.m_blendFactorRgba);
 
 			// Submit
-			bgfx::submit(_viewId, _program);
+			bgfx::submit(_id, _program);
 
 			// Keep track of submited view ids
-			s_viewMask |= 1 << _viewId;
+			s_viewMask |= 1 << _id;
 		}
 	}
 
@@ -795,7 +794,7 @@ public:
 	{
 	}
 
-	virtual void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	virtual void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -805,8 +804,13 @@ public:
 		m_debug = BGFX_DEBUG_NONE;
 		m_reset = BGFX_RESET_VSYNC;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_viewState.m_width, m_viewState.m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_viewState.m_width;
+		init.resolution.height = m_viewState.m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
@@ -818,7 +822,7 @@ public:
 
 		s_uniforms.init();
 
-		s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Int1);
+		s_texColor = bgfx::createUniform("s_texColor", bgfx::UniformType::Sampler);
 
 		m_programTextureLighting = loadProgram("vs_stencil_texture_lighting", "fs_stencil_texture_lighting");
 		m_programColorLighting   = loadProgram("vs_stencil_color_lighting",   "fs_stencil_color_lighting"  );
@@ -861,9 +865,8 @@ public:
 		const bgfx::Caps* caps = bgfx::getCaps();
 		bx::mtxProj(m_viewState.m_proj, 60.0f, aspect, 0.1f, 100.0f, caps->homogeneousDepth);
 
-		float initialPos[3] = { 0.0f, 18.0f, -40.0f };
 		cameraCreate();
-		cameraSetPosition(initialPos);
+		cameraSetPosition({ 0.0f, 18.0f, -40.0f });
 		cameraSetVerticalAngle(-0.35f);
 		cameraGetViewMtx(m_viewState.m_view);
 
@@ -876,7 +879,7 @@ public:
 		m_updateScene     = true;
 	}
 
-	virtual int shutdown() BX_OVERRIDE
+	virtual int shutdown() override
 	{
 		// Cleanup.
 		m_bunnyMesh.unload();
@@ -885,17 +888,17 @@ public:
 		m_hplaneMesh.unload();
 		m_vplaneMesh.unload();
 
-		bgfx::destroyTexture(m_figureTex);
-		bgfx::destroyTexture(m_fieldstoneTex);
-		bgfx::destroyTexture(m_flareTex);
+		bgfx::destroy(m_figureTex);
+		bgfx::destroy(m_fieldstoneTex);
+		bgfx::destroy(m_flareTex);
 
-		bgfx::destroyProgram(m_programTextureLighting);
-		bgfx::destroyProgram(m_programColorLighting);
-		bgfx::destroyProgram(m_programColorTexture);
-		bgfx::destroyProgram(m_programColorBlack);
-		bgfx::destroyProgram(m_programTexture);
+		bgfx::destroy(m_programTextureLighting);
+		bgfx::destroy(m_programColorLighting);
+		bgfx::destroy(m_programColorTexture);
+		bgfx::destroy(m_programColorBlack);
+		bgfx::destroy(m_programTexture);
 
-		bgfx::destroyUniform(s_texColor);
+		bgfx::destroy(s_texColor);
 
 		s_uniforms.destroy();
 
@@ -908,7 +911,7 @@ public:
 		return 0;
 	}
 
-	virtual bool update() BX_OVERRIDE
+	virtual bool update() override
 	{
 		if (!entry::processEvents(m_viewState.m_width, m_viewState.m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -926,12 +929,15 @@ public:
 
 			ImGui::SetNextWindowPos(
 				  ImVec2(m_viewState.m_width - m_viewState.m_width / 5.0f - 10.0f, 10.0f)
-				, ImGuiSetCond_FirstUseEver
+				, ImGuiCond_FirstUseEver
+				);
+			ImGui::SetNextWindowSize(
+				  ImVec2(m_viewState.m_width / 5.0f, m_viewState.m_height / 2.0f)
+				, ImGuiCond_FirstUseEver
 				);
 			ImGui::Begin("Settings"
 				, NULL
-				, ImVec2(m_viewState.m_width / 5.0f, m_viewState.m_height / 2.0f)
-				, ImGuiWindowFlags_AlwaysAutoResize
+				, 0
 				);
 
 			{
@@ -1005,9 +1011,9 @@ public:
 			const float radius = (m_scene == StencilReflectionScene) ? 15.0f : 25.0f;
 			for (uint8_t ii = 0; ii < numLights; ++ii)
 			{
-				lightPosRadius[ii][0] = bx::fsin( (lightTimeAccumulator*1.1f + ii*0.03f + ii*bx::kPiHalf*1.07f ) )*20.0f;
-				lightPosRadius[ii][1] = 8.0f + (1.0f - bx::fcos( (lightTimeAccumulator*1.5f + ii*0.29f + bx::kPiHalf*1.49f ) ) )*4.0f;
-				lightPosRadius[ii][2] = bx::fcos( (lightTimeAccumulator*1.3f + ii*0.13f + ii*bx::kPiHalf*1.79f ) )*20.0f;
+				lightPosRadius[ii][0] = bx::sin( (lightTimeAccumulator*1.1f + ii*0.03f + ii*bx::kPiHalf*1.07f ) )*20.0f;
+				lightPosRadius[ii][1] = 8.0f + (1.0f - bx::cos( (lightTimeAccumulator*1.5f + ii*0.29f + bx::kPiHalf*1.49f ) ) )*4.0f;
+				lightPosRadius[ii][2] = bx::cos( (lightTimeAccumulator*1.3f + ii*0.13f + ii*bx::kPiHalf*1.79f ) )*20.0f;
 				lightPosRadius[ii][3] = radius;
 			}
 			bx::memCopy(s_uniforms.m_lightPosRadius, lightPosRadius, numLights * 4*sizeof(float) );
@@ -1077,9 +1083,9 @@ public:
 					, 0.0f
 					, 0.0f
 					, 0.0f
-					, bx::fsin(ii * 2.0f + 13.0f - sceneTimeAccumulator) * 13.0f
+					, bx::sin(ii * 2.0f + 13.0f - sceneTimeAccumulator) * 13.0f
 					, 4.0f
-					, bx::fcos(ii * 2.0f + 13.0f - sceneTimeAccumulator) * 13.0f
+					, bx::cos(ii * 2.0f + 13.0f - sceneTimeAccumulator) * 13.0f
 					);
 			}
 
@@ -1117,18 +1123,15 @@ public:
 
 					// Compute reflected matrix.
 					float reflectMtx[16];
-					float plane_pos[3] = { 0.0f, 0.01f, 0.0f };
-					float normal[3] = { 0.0f, 1.0f, 0.0f };
-					mtxReflected(reflectMtx, plane_pos, normal);
+					mtxReflected(reflectMtx, { 0.0f, 0.01f, 0.0f }, { 0.0f, 1.0f, 0.0f });
 
 					// Reflect lights.
-					float reflectedLights[MAX_NUM_LIGHTS][4];
 					for (uint8_t ii = 0; ii < numLights; ++ii)
 					{
-						bx::vec3MulMtx(reflectedLights[ii], lightPosRadius[ii], reflectMtx);
-						reflectedLights[ii][3] = lightPosRadius[ii][3];
+						bx::Vec3 reflected = bx::mul(bx::load<bx::Vec3>(lightPosRadius[ii]), reflectMtx);
+						bx::store(&s_uniforms.m_lightPosRadius[ii], reflected);
+						s_uniforms.m_lightPosRadius[ii][3] = lightPosRadius[ii][3];
 					}
-					bx::memCopy(s_uniforms.m_lightPosRadius, reflectedLights, numLights * 4*sizeof(float) );
 
 					// Reflect and submit bunny.
 					float mtxReflectedBunny[16];
@@ -1218,11 +1221,7 @@ public:
 					}
 
 					// Ground plane.
-					float ground[4];
-					float plane_pos[3] = { 0.0f, 0.0f, 0.0f };
-					float normal[3] = { 0.0f, 1.0f, 0.0f };
-					bx::memCopy(ground, normal, sizeof(float) * 3);
-					ground[3] = -bx::vec3Dot(plane_pos, normal) - 0.01f; // - 0.01 against z-fighting
+					float ground[4] = { 0.0f, 1.0f, 0.0f, -bx::dot(bx::Vec3{ 0.0f, 0.0f, 0.0f }, bx::Vec3{ 0.0f, 1.0f, 0.0f }) - 0.01f };
 
 					for (uint8_t ii = 0, viewId = RENDER_VIEWID_RANGE5_PASS_6; ii < numLights; ++ii, ++viewId)
 					{

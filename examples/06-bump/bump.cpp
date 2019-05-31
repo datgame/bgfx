@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -90,7 +90,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -99,8 +99,13 @@ public:
 		m_debug  = BGFX_DEBUG_NONE;
 		m_reset  = BGFX_RESET_VSYNC;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
@@ -137,8 +142,8 @@ public:
 		m_ibh = bgfx::createIndexBuffer(bgfx::makeRef(s_cubeIndices, sizeof(s_cubeIndices) ) );
 
 		// Create texture sampler uniforms.
-		s_texColor  = bgfx::createUniform("s_texColor",  bgfx::UniformType::Int1);
-		s_texNormal = bgfx::createUniform("s_texNormal", bgfx::UniformType::Int1);
+		s_texColor  = bgfx::createUniform("s_texColor",  bgfx::UniformType::Sampler);
+		s_texNormal = bgfx::createUniform("s_texNormal", bgfx::UniformType::Sampler);
 
 		m_numLights = 4;
 		u_lightPosRadius = bgfx::createUniform("u_lightPosRadius", bgfx::UniformType::Vec4, m_numLights);
@@ -158,20 +163,20 @@ public:
 		imguiCreate();
 	}
 
-	virtual int shutdown() BX_OVERRIDE
+	virtual int shutdown() override
 	{
 		imguiDestroy();
 
 		// Cleanup.
-		bgfx::destroyIndexBuffer(m_ibh);
-		bgfx::destroyVertexBuffer(m_vbh);
-		bgfx::destroyProgram(m_program);
-		bgfx::destroyTexture(m_textureColor);
-		bgfx::destroyTexture(m_textureNormal);
-		bgfx::destroyUniform(s_texColor);
-		bgfx::destroyUniform(s_texNormal);
-		bgfx::destroyUniform(u_lightPosRadius);
-		bgfx::destroyUniform(u_lightRgbInnerR);
+		bgfx::destroy(m_ibh);
+		bgfx::destroy(m_vbh);
+		bgfx::destroy(m_program);
+		bgfx::destroy(m_textureColor);
+		bgfx::destroy(m_textureNormal);
+		bgfx::destroy(s_texColor);
+		bgfx::destroy(s_texNormal);
+		bgfx::destroy(u_lightPosRadius);
+		bgfx::destroy(u_lightRgbInnerR);
 
 		// Shutdown bgfx.
 		bgfx::shutdown();
@@ -179,7 +184,7 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	bool update() override
 	{
 		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -206,24 +211,10 @@ public:
 
 			float time = (float)( (bx::getHPCounter()-m_timeOffset)/double(bx::getHPFrequency() ));
 
-			float at[3]  = { 0.0f, 0.0f,  0.0f };
-			float eye[3] = { 0.0f, 0.0f, -7.0f };
+			const bx::Vec3 at  = { 0.0f, 0.0f,  0.0f };
+			const bx::Vec3 eye = { 0.0f, 0.0f, -7.0f };
 
 			// Set view and projection matrix for view 0.
-			const bgfx::HMD* hmd = bgfx::getHMD();
-			if (NULL != hmd && 0 != (hmd->flags & BGFX_HMD_RENDERING) )
-			{
-				float view[16];
-				bx::mtxQuatTranslationHMD(view, hmd->eye[0].rotation, eye);
-				bgfx::setViewTransform(0, view, hmd->eye[0].projection, BGFX_VIEW_STEREO, hmd->eye[1].projection);
-
-				// Set view 0 default viewport.
-				//
-				// Use HMD's width/height since HMD's internal frame buffer size
-				// might be much larger than window size.
-				bgfx::setViewRect(0, 0, 0, hmd->width, hmd->height);
-			}
-			else
 			{
 				float view[16];
 				bx::mtxLookAt(view, eye, at);
@@ -239,8 +230,8 @@ public:
 			float lightPosRadius[4][4];
 			for (uint32_t ii = 0; ii < m_numLights; ++ii)
 			{
-				lightPosRadius[ii][0] = bx::fsin( (time*(0.1f + ii*0.17f) + ii*bx::kPiHalf*1.37f ) )*3.0f;
-				lightPosRadius[ii][1] = bx::fcos( (time*(0.2f + ii*0.29f) + ii*bx::kPiHalf*1.49f ) )*3.0f;
+				lightPosRadius[ii][0] = bx::sin( (time*(0.1f + ii*0.17f) + ii*bx::kPiHalf*1.37f ) )*3.0f;
+				lightPosRadius[ii][1] = bx::cos( (time*(0.2f + ii*0.29f) + ii*bx::kPiHalf*1.49f ) )*3.0f;
 				lightPosRadius[ii][2] = -2.5f;
 				lightPosRadius[ii][3] = 3.0f;
 			}
@@ -258,17 +249,19 @@ public:
 			bgfx::setUniform(u_lightRgbInnerR, lightRgbInnerR, m_numLights);
 
 			const uint16_t instanceStride = 64;
-			const uint16_t numInstances = 3;
+			const uint16_t numInstances   = 3;
 
 			if (m_instancingSupported)
 			{
 				// Write instance data for 3x3 cubes.
 				for (uint32_t yy = 0; yy < 3; ++yy)
 				{
-					const bgfx::InstanceDataBuffer* idb = bgfx::allocInstanceDataBuffer(numInstances, instanceStride);
-					if (NULL != idb)
+					if (numInstances == bgfx::getAvailInstanceDataBuffer(numInstances, instanceStride) )
 					{
-						uint8_t* data = idb->data;
+						bgfx::InstanceDataBuffer idb;
+						bgfx::allocInstanceDataBuffer(&idb, numInstances, instanceStride);
+
+						uint8_t* data = idb.data;
 
 						for (uint32_t xx = 0; xx < 3; ++xx)
 						{
@@ -282,7 +275,7 @@ public:
 						}
 
 						// Set instance data buffer.
-						bgfx::setInstanceDataBuffer(idb, numInstances);
+						bgfx::setInstanceDataBuffer(&idb, 0, numInstances);
 
 						// Set vertex and index buffer.
 						bgfx::setVertexBuffer(0, m_vbh);
@@ -294,9 +287,9 @@ public:
 
 						// Set render states.
 						bgfx::setState(0
-								| BGFX_STATE_RGB_WRITE
-								| BGFX_STATE_ALPHA_WRITE
-								| BGFX_STATE_DEPTH_WRITE
+								| BGFX_STATE_WRITE_RGB
+								| BGFX_STATE_WRITE_A
+								| BGFX_STATE_WRITE_Z
 								| BGFX_STATE_DEPTH_TEST_LESS
 								| BGFX_STATE_MSAA
 								);
@@ -331,9 +324,9 @@ public:
 
 						// Set render states.
 						bgfx::setState(0
-								| BGFX_STATE_RGB_WRITE
-								| BGFX_STATE_ALPHA_WRITE
-								| BGFX_STATE_DEPTH_WRITE
+								| BGFX_STATE_WRITE_RGB
+								| BGFX_STATE_WRITE_A
+								| BGFX_STATE_WRITE_Z
 								| BGFX_STATE_DEPTH_TEST_LESS
 								| BGFX_STATE_MSAA
 								);

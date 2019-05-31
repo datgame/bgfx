@@ -1,10 +1,10 @@
 --
--- Copyright 2010-2017 Branimir Karadzic. All rights reserved.
+-- Copyright 2010-2019 Branimir Karadzic. All rights reserved.
 -- License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
 --
 
 project "texturec"
-	uuid "838801ee-7bc3-11e1-9f19-eae7d36e7d26"
+	uuid (os.uuid("texturec"))
 	kind "ConsoleApp"
 
 	includedirs {
@@ -27,13 +27,16 @@ project "texturec"
 
 	configuration { "mingw-*" }
 		targetextension ".exe"
+		links {
+			"psapi",
+		}
 
 	configuration { "osx" }
 		links {
 			"Cocoa.framework",
 		}
 
-	configuration { "vs20* or mingw*" }
+	configuration { "vs20*" }
 		links {
 			"psapi",
 		}

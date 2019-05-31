@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -107,7 +107,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -116,8 +116,13 @@ public:
 		m_debug  = BGFX_DEBUG_NONE;
 		m_reset  = BGFX_RESET_VSYNC;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
@@ -144,15 +149,15 @@ public:
 		imguiCreate();
 	}
 
-	int shutdown() BX_OVERRIDE
+	int shutdown() override
 	{
 		imguiDestroy();
 
 		// Cleanup.
-		bgfx::destroyProgram(m_program);
+		bgfx::destroy(m_program);
 
-		bgfx::destroyUniform(u_mtx);
-		bgfx::destroyUniform(u_lightDirTime);
+		bgfx::destroy(u_mtx);
+		bgfx::destroy(u_lightDirTime);
 
 		// Shutdown bgfx.
 		bgfx::shutdown();
@@ -160,7 +165,7 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	bool update() override
 	{
 		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -187,8 +192,8 @@ public:
 			// if no other draw calls are submitted to viewZ 0.
 			bgfx::touch(0);
 
-			float at[3]  = { 0.0f, 0.0f,   0.0f };
-			float eye[3] = { 0.0f, 0.0f, -15.0f };
+			const bx::Vec3 at  = { 0.0f, 0.0f,   0.0f };
+			const bx::Vec3 eye = { 0.0f, 0.0f, -15.0f };
 
 			float view[16];
 			float proj[16];
@@ -219,11 +224,9 @@ public:
 
 			float mtxInv[16];
 			bx::mtxInverse(mtxInv, mtx);
-			float lightDirModel[4] = { -0.4f, -0.5f, -1.0f, 0.0f };
-			float lightDirModelN[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
-			bx::vec3Norm(lightDirModelN, lightDirModel);
 			float lightDirTime[4];
-			bx::vec4MulMtx(lightDirTime, lightDirModelN, mtxInv);
+			const bx::Vec3 lightDirModelN = bx::normalize(bx::Vec3{-0.4f, -0.5f, -1.0f});
+			bx::store(lightDirTime, bx::mul(lightDirModelN, mtxInv) );
 			lightDirTime[3] = time;
 			bgfx::setUniform(u_lightDirTime, lightDirTime);
 

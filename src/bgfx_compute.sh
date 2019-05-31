@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -11,11 +11,25 @@
 #ifndef __cplusplus
 
 #if BGFX_SHADER_LANGUAGE_GLSL
+#	define __UAV_REG_0 4
+#	define __UAV_REG_1 5
+#	define __UAV_REG_2 6
+#	define __UAV_REG_3 7
+#else
+#	define __UAV_REG_0 16
+#	define __UAV_REG_1 17
+#	define __UAV_REG_2 18
+#	define __UAV_REG_3 19
+#endif // BGFX_SHADER_LANGUAGE_GLSL
+
+#define FRAMEBUFFER_IMAGE2D_RW(_name, _format, _reg) IMAGE2D_RW(_name, _format, __UAV_REG_ ## _reg)
+
+#if BGFX_SHADER_LANGUAGE_GLSL
 
 #define SHARED shared
 
 #define __IMAGE_XX(_name, _format, _reg, _image, _access) \
-			layout(_format, binding=_reg) _access uniform highp _image _name
+	layout(_format, binding=_reg) _access uniform highp _image _name
 
 #define readwrite
 #define IMAGE2D_RO( _name, _format, _reg) __IMAGE_XX(_name, _format, _reg, image2D,  readonly)
@@ -39,17 +53,26 @@
 #define IMAGE3D_RW( _name, _format, _reg) __IMAGE_XX(_name, _format, _reg, image3D,  readwrite)
 #define UIMAGE3D_RW(_name, _format, _reg) __IMAGE_XX(_name, _format, _reg, uimage3D, readwrite)
 
-#define __BUFFER_XX(_name, _type, _reg, _access)                        \
-			layout(std430, binding=_reg) _access buffer _name ## Buffer \
-			{                                                           \
-				_type _name[];                                          \
-			}
+#define __BUFFER_XX(_name, _type, _reg, _access)                \
+	layout(std430, binding=_reg) _access buffer _name ## Buffer \
+	{                                                           \
+		_type _name[];                                          \
+	}
 
 #define BUFFER_RO(_name, _type, _reg) __BUFFER_XX(_name, _type, _reg, readonly)
 #define BUFFER_RW(_name, _type, _reg) __BUFFER_XX(_name, _type, _reg, readwrite)
 #define BUFFER_WR(_name, _type, _reg) __BUFFER_XX(_name, _type, _reg, writeonly)
 
 #define NUM_THREADS(_x, _y, _z) layout (local_size_x = _x, local_size_y = _y, local_size_z = _z) in;
+
+#define atomicFetchAndAdd(_mem, _data, _original)                    _original = atomicAdd(_mem, _data)
+#define atomicFetchAndAnd(_mem, _data, _original)                    _original = atomicAnd(_mem, _data)
+#define atomicFetchAndMax(_mem, _data, _original)                    _original = atomicMax(_mem, _data)
+#define atomicFetchAndMin(_mem, _data, _original)                    _original = atomicMin(_mem, _data)
+#define atomicFetchAndOr(_mem, _data, _original)                     _original = atomicOr(_mem, _data)
+#define atomicFetchAndXor(_mem, _data, _original)                    _original = atomicXor(_mem, _data)
+#define atomicFetchAndExchange(_mem, _data, _original)               _original = atomicExchange(_mem, _data)
+#define atomicFetchCompareExchange(_mem, _compare, _data, _original) _original = atomicCompSwap(_mem,_compare, _data)
 
 #else
 
@@ -59,12 +82,17 @@
 #define rg32ui   uint2
 #define rgba32ui uint4
 #define r32f     float
+#define r16f     float
 #define rg16f    float2
 #define rgba16f  float4
 #if BGFX_SHADER_LANGUAGE_HLSL
 #	define rgba8 unorm float4
+#	define rg8   unorm float2
+#	define r8    unorm float
 #else
 #	define rgba8       float4
+#	define rg8         float2
+#	define r8          float
 #endif // BGFX_SHADER_LANGUAGE_HLSL
 #define rgba32f  float4
 
@@ -82,15 +110,15 @@
 #define UIMAGE2D_WR(_name, _format, _reg) IMAGE2D_RW(_name, _format, _reg)
 #define UIMAGE2D_RW(_name, _format, _reg) IMAGE2D_RW(_name, _format, _reg)
 
-#define IMAGE2D_ARRAY_RO( _name, _format, _reg)                      \
+#define IMAGE2D_ARRAY_RO(_name, _format, _reg)                       \
 	Texture2DArray<_format> _name ## Texture : REGISTER(t, _reg);    \
-	static BgfxROImageArray2D_ ## _format _name = { _name ## Texture }
+	static BgfxROImage2DArray_ ## _format _name = { _name ## Texture }
 
 #define UIMAGE2D_ARRAY_RO(_name, _format, _reg) IMAGE2D_ARRAY_RO(_name, _format, _reg)
 
-#define IMAGE2D_ARRAY_RW( _name, _format, _reg)                        \
+#define IMAGE2D_ARRAY_RW(_name, _format, _reg)                         \
 	RWTexture2DArray<_format> _name ## Texture : REGISTER(u, _reg);    \
-	static BgfxRWImageArray2D_ ## _format _name = { _name ## Texture }
+	static BgfxRWImage2DArray_ ## _format _name = { _name ## Texture }
 
 #define UIMAGE2D_ARRAY_RW(_name, _format, _reg) IMAGE2D_ARRAY_RW(_name, _format, _reg)
 #define IMAGE2D_ARRAY_WR( _name, _format, _reg) IMAGE2D_ARRAY_RW(_name, _format, _reg)
@@ -110,43 +138,49 @@
 #define IMAGE3D_WR( _name, _format, _reg) IMAGE3D_RW(_name, _format, _reg)
 #define UIMAGE3D_WR(_name, _format, _reg) IMAGE3D_RW(_name, _format, _reg)
 
+#if BGFX_SHADER_LANGUAGE_METAL
+#define BUFFER_RO(_name, _struct, _reg) StructuredBuffer<_struct>   _name : REGISTER(t, _reg)
+#define BUFFER_RW(_name, _struct, _reg) RWStructuredBuffer <_struct> _name : REGISTER(u, _reg)
+#define BUFFER_WR(_name, _struct, _reg) BUFFER_RW(_name, _struct, _reg)
+#else
 #define BUFFER_RO(_name, _struct, _reg) Buffer<_struct>   _name : REGISTER(t, _reg)
 #define BUFFER_RW(_name, _struct, _reg) RWBuffer<_struct> _name : REGISTER(u, _reg)
 #define BUFFER_WR(_name, _struct, _reg) BUFFER_RW(_name, _struct, _reg)
+#endif
 
 #define NUM_THREADS(_x, _y, _z) [numthreads(_x, _y, _z)]
 
-#define __IMAGE_IMPL_S(_format, _storeComponents, _type, _loadComponents)      \
+#define __IMAGE_IMPL_S(_format, _storeComponents, _type, _loadComponents) \
 	\
-	struct BgfxROImage2D_ ## _format                                           \
-	{                                                                          \
-		Texture2D<_format> m_texture;                                          \
-	};                                                                         \
+	struct BgfxROImage2D_ ## _format                                      \
+	{                                                                     \
+		Texture2D<_format> m_texture;                                     \
+	};                                                                    \
 	\
-	struct BgfxRWImage2D_ ## _format                                           \
-	{                                                                          \
-		RWTexture2D<_format> m_texture;                                        \
-	};                                                                         \
+	struct BgfxRWImage2D_ ## _format                                      \
+	{                                                                     \
+		RWTexture2D<_format> m_texture;                                   \
+	};                                                                    \
 	\
-	struct BgfxROImage2DArray_ ## _format                                      \
-	{                                                                          \
-		Texture2DArray<_format> m_texture;                                     \
-	};                                                                         \
+	struct BgfxROImage2DArray_ ## _format                                 \
+	{                                                                     \
+		Texture2DArray<_format> m_texture;                                \
+	};                                                                    \
 	\
-	struct BgfxRWImageArray2D_ ## _format                                      \
-	{                                                                          \
-		RWTexture2DArray<_format> m_texture;                                   \
-	};                                                                         \
+	struct BgfxRWImage2DArray_ ## _format                                 \
+	{                                                                     \
+		RWTexture2DArray<_format> m_texture;                              \
+	};                                                                    \
 	\
-	struct BgfxROImage3D_ ## _format                                           \
-	{                                                                          \
-		Texture3D<_format> m_texture;                                          \
-	};                                                                         \
+	struct BgfxROImage3D_ ## _format                                      \
+	{                                                                     \
+		Texture3D<_format> m_texture;                                     \
+	};                                                                    \
 	\
-	struct BgfxRWImage3D_ ## _format                                           \
-	{                                                                          \
-		RWTexture3D<_format> m_texture;                                        \
-	};                                                                         \
+	struct BgfxRWImage3D_ ## _format                                      \
+	{                                                                     \
+		RWTexture3D<_format> m_texture;                                   \
+	};                                                                    \
 
 #define __IMAGE_IMPL_A(_format, _storeComponents, _type, _loadComponents)            \
 	__IMAGE_IMPL_S(_format, _storeComponents, _type, _loadComponents)                \
@@ -192,17 +226,17 @@
 		return ivec3(result);                                                        \
 	}                                                                                \
 	\
-	_type imageLoad(BgfxRWImageArray2D_ ## _format _image, ivec3 _uvw)               \
+	_type imageLoad(BgfxRWImage2DArray_ ## _format _image, ivec3 _uvw)               \
 	{                                                                                \
 		return _image.m_texture[_uvw]._loadComponents;                               \
 	}                                                                                \
 	\
-	void imageStore(BgfxRWImageArray2D_ ## _format _image, ivec3 _uvw, _type _value) \
+	void imageStore(BgfxRWImage2DArray_ ## _format _image, ivec3 _uvw, _type _value) \
 	{                                                                                \
 		_image.m_texture[_uvw] = _value._storeComponents;                            \
 	}                                                                                \
 	\
-	ivec3 imageSize(BgfxRWImageArray2D_ ## _format _image)                           \
+	ivec3 imageSize(BgfxRWImage2DArray_ ## _format _image)                           \
 	{                                                                                \
 		uvec3 result;                                                                \
 		_image.m_texture.GetDimensions(result.x, result.y, result.z);                \
@@ -238,12 +272,24 @@
 		_image.m_texture[_uvw] = _value._storeComponents;                            \
 	}
 
+#define __IMAGE_IMPL_ATOMIC(_format, _storeComponents, _type, _loadComponents)            \
+	\
+	void imageAtomicAdd(BgfxRWImage2D_ ## _format _image, ivec2 _uv,  _type _value)  \
+	{				                                                                 \
+		InterlockedAdd(_image.m_texture[_uv], _value._storeComponents);	             \
+	}                                                                                \
+
+
 __IMAGE_IMPL_A(rgba8,       xyzw, vec4,  xyzw)
+__IMAGE_IMPL_A(rg8,         xy,   vec4,  xyyy)
+__IMAGE_IMPL_A(r8,          x,    vec4,  xxxx)
 __IMAGE_IMPL_A(rg16f,       xy,   vec4,  xyyy)
 #if BGFX_SHADER_LANGUAGE_HLSL
 __IMAGE_IMPL_S(rgba16f,     xyzw, vec4,  xyzw)
+__IMAGE_IMPL_S(r16f,        x,    vec4,  xxxx)
 #else
 __IMAGE_IMPL_A(rgba16f,     xyzw, vec4,  xyzw)
+__IMAGE_IMPL_A(r16f,        x,    vec4,  xxxx)
 #endif // BGFX_SHADER_LANGUAGE_HLSL
 __IMAGE_IMPL_A(r32f,        x,    vec4,  xxxx)
 __IMAGE_IMPL_A(rgba32f,     xyzw, vec4,  xyzw)
@@ -251,79 +297,65 @@ __IMAGE_IMPL_A(r32ui,       x,    uvec4, xxxx)
 __IMAGE_IMPL_A(rg32ui,      xy,   uvec4, xyyy)
 __IMAGE_IMPL_A(rgba32ui,    xyzw, uvec4, xyzw)
 
-#define __ATOMIC_IMPL_TYPE(_genType, _glFunc, _dxFunc)            \
-			_genType _glFunc(inout _genType _mem, _genType _data) \
-			{                                                     \
-				_genType result;                                  \
-				_dxFunc(_mem, _data, result);                     \
-				return result;                                    \
-			}
+__IMAGE_IMPL_ATOMIC(r32ui,       x,    uvec4, xxxx)
 
-#define __ATOMIC_IMPL(_glFunc, _dxFunc)                \
-			__ATOMIC_IMPL_TYPE(int,  _glFunc, _dxFunc) \
-			__ATOMIC_IMPL_TYPE(uint, _glFunc, _dxFunc)
-
-__ATOMIC_IMPL(atomicAdd,      InterlockedAdd);
-__ATOMIC_IMPL(atomicAnd,      InterlockedAnd);
-__ATOMIC_IMPL(atomicExchange, InterlockedExchange);
-__ATOMIC_IMPL(atomicMax,      InterlockedMax);
-__ATOMIC_IMPL(atomicMin,      InterlockedMin);
-__ATOMIC_IMPL(atomicOr,       InterlockedOr);
-__ATOMIC_IMPL(atomicXor,      InterlockedXor);
-
-int atomicCompSwap(inout int _mem, int _compare, int _data)
-{
-	int result;
-	InterlockedCompareExchange(_mem, _compare, _data, result);
-	return result;
-}
-
-uint atomicCompSwap(inout uint _mem, uint _compare, uint _data)
-{
-	uint result;
-	InterlockedCompareExchange(_mem, _compare, _data, result);
-	return result;
-}
+#define atomicAdd(_mem, _data)                                       InterlockedAdd(_mem, _data)
+#define atomicAnd(_mem, _data)                                       InterlockedAnd(_mem, _data)
+#define atomicMax(_mem, _data)                                       InterlockedMax(_mem, _data)
+#define atomicMin(_mem, _data)                                       InterlockedMin(_mem, _data)
+#define atomicOr(_mem, _data)                                        InterlockedOr(_mem, _data)
+#define atomicXor(_mem, _data)                                       InterlockedXor(_mem, _data)
+#define atomicFetchAndAdd(_mem, _data, _original)                    InterlockedAdd(_mem, _data, _original)
+#define atomicFetchAndAnd(_mem, _data, _original)                    InterlockedAnd(_mem, _data, _original)
+#define atomicFetchAndMax(_mem, _data, _original)                    InterlockedMax(_mem, _data, _original)
+#define atomicFetchAndMin(_mem, _data, _original)                    InterlockedMin(_mem, _data, _original)
+#define atomicFetchAndOr(_mem, _data, _original)                     InterlockedOr(_mem, _data, _original)
+#define atomicFetchAndXor(_mem, _data, _original)                    InterlockedXor(_mem, _data, _original)
+#define atomicFetchAndExchange(_mem, _data, _original)               InterlockedExchange(_mem, _data, _original)
+#define atomicFetchCompareExchange(_mem, _compare, _data, _original) InterlockedCompareExchange(_mem,_compare, _data, _original)
 
 // InterlockedCompareStore
 
 #define barrier()                    GroupMemoryBarrierWithGroupSync()
 #define memoryBarrier()              GroupMemoryBarrierWithGroupSync()
 #define memoryBarrierAtomicCounter() GroupMemoryBarrierWithGroupSync()
-#define memoryBarrierBuffer()        GroupMemoryBarrierWithGroupSync()
+#define memoryBarrierBuffer()        AllMemoryBarrierWithGroupSync()
 #define memoryBarrierImage()         GroupMemoryBarrierWithGroupSync()
 #define memoryBarrierShared()        GroupMemoryBarrierWithGroupSync()
 #define groupMemoryBarrier()         GroupMemoryBarrierWithGroupSync()
 
 #endif // BGFX_SHADER_LANGUAGE_GLSL
 
-#define dispatchIndirect(_buffer \
-			, _offset            \
-			, _numX              \
-			, _numY              \
-			, _numZ              \
-			)                    \
-			_buffer[_offset*2+0] = uvec4(_numX, _numY, _numZ, 0u)
+#define dispatchIndirect( \
+	  _buffer             \
+	, _offset             \
+	, _numX               \
+	, _numY               \
+	, _numZ               \
+	)                     \
+	_buffer[_offset*2+0] = uvec4(_numX, _numY, _numZ, 0u)
 
-#define drawIndirect(_buffer \
-			, _offset        \
-			, _numVertices   \
-			, _numInstances  \
-			, _startVertex   \
-			, _startInstance \
-			)                \
-			_buffer[_offset*2+0] = uvec4(_numVertices, _numInstances, _startVertex, _startInstance)
+#define drawIndirect( \
+	  _buffer         \
+	, _offset         \
+	, _numVertices    \
+	, _numInstances   \
+	, _startVertex    \
+	, _startInstance  \
+	)                 \
+	_buffer[_offset*2+0] = uvec4(_numVertices, _numInstances, _startVertex, _startInstance)
 
-#define drawIndexedIndirect(_buffer \
-			, _offset               \
-			, _numIndices           \
-			, _numInstances         \
-			, _startIndex           \
-			, _startVertex          \
-			, _startInstance        \
-			)                       \
-			_buffer[_offset*2+0] = uvec4(_numIndices, _numInstances, _startIndex, _startVertex); \
-			_buffer[_offset*2+1] = uvec4(_startInstance, 0u, 0u, 0u)
+#define drawIndexedIndirect( \
+	  _buffer                \
+	, _offset                \
+	, _numIndices            \
+	, _numInstances          \
+	, _startIndex            \
+	, _startVertex           \
+	, _startInstance         \
+	)                        \
+	_buffer[_offset*2+0] = uvec4(_numIndices, _numInstances, _startIndex, _startVertex); \
+	_buffer[_offset*2+1] = uvec4(_startInstance, 0u, 0u, 0u)
 
 #endif // __cplusplus
 

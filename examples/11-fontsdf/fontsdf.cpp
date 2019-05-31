@@ -8,7 +8,7 @@
 
 #include <bgfx/bgfx.h>
 #include <bx/timer.h>
-#include <bx/fpumath.h>
+#include <bx/math.h>
 
 #include "font/font_manager.h"
 #include "font/text_metrics.h"
@@ -42,7 +42,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -51,8 +51,13 @@ public:
 		m_debug = BGFX_DEBUG_NONE;
 		m_reset = BGFX_RESET_VSYNC;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
@@ -68,7 +73,9 @@ public:
 		// Imgui.
 		imguiCreate();
 
-		m_bigText = (char*)load("text/sherlock_holmes_a_scandal_in_bohemia_arthur_conan_doyle.txt");
+		uint32_t size;
+		m_txtFile = load("text/sherlock_holmes_a_scandal_in_bohemia_arthur_conan_doyle.txt", &size);
+		m_bigText = bx::StringView( (const char*)m_txtFile, size);
 
 		// Init the text rendering system.
 		m_fontManager = new FontManager(512);
@@ -102,11 +109,11 @@ public:
 		m_textSize = 14.0f;
 	}
 
-	virtual int shutdown() BX_OVERRIDE
+	virtual int shutdown() override
 	{
 		imguiDestroy();
 
-		BX_FREE(entry::getAllocator(), m_bigText);
+		unload(m_txtFile);
 
 		m_fontManager->destroyTtf(m_font);
 		// Destroy the fonts.
@@ -124,7 +131,7 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	bool update() override
 	{
 		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -142,12 +149,15 @@ public:
 
 			ImGui::SetNextWindowPos(
 				  ImVec2(m_width - m_width / 5.0f - 10.0f, 10.0f)
-				, ImGuiSetCond_FirstUseEver
+				, ImGuiCond_FirstUseEver
+				);
+			ImGui::SetNextWindowSize(
+				  ImVec2(m_width / 5.0f, m_height / 2.0f)
+				, ImGuiCond_FirstUseEver
 				);
 			ImGui::Begin("Settings"
 				, NULL
-				, ImVec2(m_width / 5.0f, m_height / 2.0f)
-				, ImGuiWindowFlags_AlwaysAutoResize
+				, 0
 				);
 
 			bool recomputeVisibleText = false;
@@ -183,8 +193,8 @@ public:
 			// if no other draw calls are submitted to view 0.
 			bgfx::touch(0);
 
-			float at[3]  = { 0.0f, 0.0f,  0.0f };
-			float eye[3] = { 0.0f, 0.0f, -1.0f };
+			const bx::Vec3 at  = { 0.0f, 0.0f,  0.0f };
+			const bx::Vec3 eye = { 0.0f, 0.0f, -1.0f };
 
 			float view[16];
 			bx::mtxLookAt(view, eye, at);
@@ -192,30 +202,7 @@ public:
 			const float centering = 0.5f;
 
 			// Setup a top-left ortho matrix for screen space drawing.
-			const bgfx::HMD*  hmd  = bgfx::getHMD();
 			const bgfx::Caps* caps = bgfx::getCaps();
-			if (NULL != hmd
-			&&  0 != (hmd->flags & BGFX_HMD_RENDERING) )
-			{
-				float proj[16];
-				bx::mtxProj(proj, hmd->eye[0].fov, 0.1f, 100.0f, caps->homogeneousDepth);
-
-				static float time = 0.0f;
-				time += 0.05f;
-
-				const float dist = 10.0f;
-				const float offset0 = -proj[8] + (hmd->eye[0].viewOffset[0] / dist * proj[0]);
-				const float offset1 = -proj[8] + (hmd->eye[1].viewOffset[0] / dist * proj[0]);
-
-				float ortho[2][16];
-				const float viewOffset = m_width/4.0f;
-				const float viewWidth  = m_width/2.0f;
-				bx::mtxOrtho(ortho[0], centering + viewOffset, centering + viewOffset + viewWidth, m_height + centering, centering, -1.0f, 1.0f, offset0, caps->homogeneousDepth);
-				bx::mtxOrtho(ortho[1], centering + viewOffset, centering + viewOffset + viewWidth, m_height + centering, centering, -1.0f, 1.0f, offset1, caps->homogeneousDepth);
-				bgfx::setViewTransform(0, view, ortho[0], BGFX_VIEW_STEREO, ortho[1]);
-				bgfx::setViewRect(0, 0, 0, hmd->width, hmd->height);
-			}
-			else
 			{
 				float ortho[16];
 				bx::mtxOrtho(ortho, centering, m_width + centering, m_height + centering, centering, -1.0f, 1.0f, 0.0f, caps->homogeneousDepth);
@@ -268,7 +255,8 @@ public:
 	uint32_t m_debug;
 	uint32_t m_reset;
 
-	char* m_bigText;
+	void* m_txtFile;
+	bx::StringView m_bigText;
 
 	// Init the text rendering system.
 	FontManager* m_fontManager;

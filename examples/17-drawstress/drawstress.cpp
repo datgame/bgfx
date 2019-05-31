@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -7,6 +7,8 @@
 #include "bgfx_utils.h"
 
 #include <bx/uint32_t.h>
+#include <bx/thread.h>
+#include <bx/os.h>
 #include "imgui/imgui.h"
 
 #include <bgfx/embedded_shader.h>
@@ -75,6 +77,16 @@ static const uint16_t s_cubeIndices[36] =
 	6, 3, 7,
 };
 
+static const float s_mod[6][3] =
+{
+	{ 1.0f, 1.0f, 1.0f },
+	{ 1.0f, 0.0f, 0.0f },
+	{ 0.0f, 1.0f, 0.0f },
+	{ 0.0f, 0.0f, 1.0f },
+	{ 1.0f, 1.0f, 0.0f },
+	{ 0.0f, 1.0f, 1.0f },
+};
+
 #if BX_PLATFORM_EMSCRIPTEN
 static const int64_t highwm = 1000000/35;
 static const int64_t lowwm  = 1000000/27;
@@ -82,6 +94,8 @@ static const int64_t lowwm  = 1000000/27;
 static const int64_t highwm = 1000000/65;
 static const int64_t lowwm  = 1000000/57;
 #endif // BX_PLATFORM_EMSCRIPTEN
+
+int32_t threadFunc(bx::Thread* _thread, void* _userData);
 
 class ExampleDrawStress : public entry::AppI
 {
@@ -91,7 +105,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -112,11 +126,16 @@ public:
 		m_deltaTimeAvgNs = 0;
 		m_numFrames      = 0;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		const bgfx::Caps* caps = bgfx::getCaps();
-		m_maxDim = (int32_t)bx::fpow(float(caps->limits.maxDrawCalls), 1.0f/3.0f);
+		m_maxDim = (int32_t)bx::pow(float(caps->limits.maxDrawCalls), 1.0f/3.0f);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
@@ -152,15 +171,29 @@ public:
 
 		// Imgui.
 		imguiCreate();
+
+		m_maxThreads = bx::min<int32_t>(caps->limits.maxEncoders, BX_COUNTOF(m_thread) );
+		m_numThreads = (m_maxThreads+1)/2;
+
+		for (int32_t ii = 0; ii < m_maxThreads; ++ii)
+		{
+			m_thread[ii].init(threadFunc, this);
+		}
 	}
 
-	int shutdown() BX_OVERRIDE
+	int shutdown() override
 	{
+		for (int32_t ii = 0; ii < m_maxThreads; ++ii)
+		{
+			m_thread[ii].push(reinterpret_cast<void*>(UINTPTR_MAX) );
+			m_thread[ii].shutdown();
+		}
+
 		// Cleanup.
 		imguiDestroy();
-		bgfx::destroyIndexBuffer(m_ibh);
-		bgfx::destroyVertexBuffer(m_vbh);
-		bgfx::destroyProgram(m_program);
+		bgfx::destroy(m_ibh);
+		bgfx::destroy(m_vbh);
+		bgfx::destroy(m_program);
 
 		// Shutdown bgfx.
 		bgfx::shutdown();
@@ -168,7 +201,94 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	int32_t thread(bx::Thread* _thread)
+	{
+		for (;;)
+		{
+			union
+			{
+				void* ptr;
+				uintptr_t id;
+
+			} cast;
+
+			cast.ptr = _thread->pop();
+			if (UINTPTR_MAX == cast.id)
+			{
+				break;
+			}
+
+			const uint32_t numThreads = uint32_t(cast.id);
+			const uint32_t idx = uint32_t(_thread - m_thread);
+			const uint32_t num = uint32_t(m_dim)/numThreads;
+			const uint32_t rem = idx == numThreads-1 ? uint32_t(m_dim)%numThreads : 0;
+			const uint32_t xx  = idx*num;
+			submit(idx+1, xx, num + rem);
+		}
+
+		return bx::kExitSuccess;
+	}
+
+	void submit(uint32_t _tid, uint32_t _xstart, uint32_t _num)
+	{
+		bgfx::Encoder* encoder = bgfx::begin();
+		if (0 != _tid)
+		{
+			m_sync.post();
+		}
+
+		if (NULL != encoder)
+		{
+			const int64_t now = bx::getHPCounter();
+			const double freq = double(bx::getHPFrequency() );
+			float time = (float)( (now-m_timeOffset)/freq);
+
+			const float* mod = s_mod[_tid%BX_COUNTOF(s_mod)];
+
+			float mtxS[16];
+			const float scale = 0 == m_transform ? 0.25f : 0.0f;
+			bx::mtxScale(mtxS, scale, scale, scale);
+
+			const float step = 0.6f;
+			float pos[3];
+			pos[0] = -step*m_dim / 2.0f;
+			pos[1] = -step*m_dim / 2.0f;
+			pos[2] = -15.0;
+
+			for (uint32_t zz = 0; zz < uint32_t(m_dim); ++zz)
+			{
+				for (uint32_t yy = 0; yy < uint32_t(m_dim); ++yy)
+				{
+					for (uint32_t xx = _xstart, xend = _xstart+_num; xx < xend; ++xx)
+					{
+						float mtxR[16];
+						bx::mtxRotateXYZ(mtxR
+							, (time + xx*0.21f)*mod[0]
+							, (time + yy*0.37f)*mod[1]
+							, (time + zz*0.13f)*mod[2]
+							);
+
+						float mtx[16];
+						bx::mtxMul(mtx, mtxS, mtxR);
+
+						mtx[12] = pos[0] + float(xx)*step;
+						mtx[13] = pos[1] + float(yy)*step;
+						mtx[14] = pos[2] + float(zz)*step;
+
+						encoder->setTransform(mtx);
+						encoder->setVertexBuffer(0, m_vbh);
+						encoder->setIndexBuffer(m_ibh);
+						encoder->setState(BGFX_STATE_DEFAULT);
+						encoder->submit(0, m_program);
+					}
+				}
+			}
+
+			bgfx::end(encoder);
+		}
+	}
+
+	bool update() override
 	{
 		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -184,7 +304,7 @@ public:
 
 			if (m_deltaTimeNs > 1000000)
 			{
-				m_deltaTimeAvgNs = m_deltaTimeNs / bx::int64_max(1, m_numFrames);
+				m_deltaTimeAvgNs = m_deltaTimeNs / bx::max<int64_t>(1, m_numFrames);
 
 				if (m_autoAdjust)
 				{
@@ -206,8 +326,6 @@ public:
 				++m_numFrames;
 			}
 
-			float time = (float)( (now-m_timeOffset)/freq);
-
 			imguiBeginFrame(m_mouseState.m_mx
 				,  m_mouseState.m_my
 				, (m_mouseState.m_buttons[entry::MouseButton::Left  ] ? IMGUI_MBUT_LEFT   : 0)
@@ -220,12 +338,17 @@ public:
 
 			showExampleDialog(this);
 
-			ImGui::SetNextWindowPos(ImVec2((float)m_width - (float)m_width / 4.0f - 10.0f, 10.0f) );
-			ImGui::SetNextWindowSize(ImVec2((float)m_width / 4.0f, (float)m_height / 2.0f) );
+			ImGui::SetNextWindowPos(
+				  ImVec2((float)m_width - (float)m_width / 4.0f - 10.0f, 10.0f)
+				, ImGuiCond_FirstUseEver
+				);
+			ImGui::SetNextWindowSize(
+				  ImVec2((float)m_width / 4.0f, (float)m_height / 2.0f)
+				, ImGuiCond_FirstUseEver
+				);
 			ImGui::Begin("Settings"
 				, NULL
-				, ImVec2((float)m_width / 4.0f, (float)m_height / 2.0f)
-				, ImGuiWindowFlags_AlwaysAutoResize
+				, 0
 				);
 
 			ImGui::RadioButton("Rotate",&m_transform,0);
@@ -233,6 +356,9 @@ public:
 			ImGui::Separator();
 
 			ImGui::Checkbox("Auto adjust", &m_autoAdjust);
+
+			ImGui::SliderInt("Num threads", &m_numThreads, 1, m_maxThreads);
+			const uint32_t numThreads = m_numThreads;
 
 			ImGui::SliderInt("Dim", &m_dim, 5, m_maxDim);
 			ImGui::Text("Draw calls: %d", m_dim*m_dim*m_dim);
@@ -249,8 +375,8 @@ public:
 
 			imguiEndFrame();
 
-			float at[3] = { 0.0f, 0.0f, 0.0f };
-			float eye[3] = { 0.0f, 0.0f, -35.0f };
+			const bx::Vec3 at  = { 0.0f, 0.0f,   0.0f };
+			const bx::Vec3 eye = { 0.0f, 0.0f, -35.0f };
 
 			float view[16];
 			bx::mtxLookAt(view, eye, at);
@@ -269,46 +395,21 @@ public:
 			// if no other draw calls are submitted to view 0.
 			bgfx::touch(0);
 
-			float mtxS[16];
-			const float scale = 0 == m_transform ? 0.25f : 0.0f;
-			bx::mtxScale(mtxS, scale, scale, scale);
-
-			const float step = 0.6f;
-			float pos[3];
-			pos[0] = -step*m_dim / 2.0f;
-			pos[1] = -step*m_dim / 2.0f;
-			pos[2] = -15.0;
-
-			for (uint32_t zz = 0; zz < uint32_t(m_dim); ++zz)
+			if (1 < numThreads)
 			{
-				for (uint32_t yy = 0; yy < uint32_t(m_dim); ++yy)
+				for (uint32_t ii = 0; ii < numThreads; ++ii)
 				{
-					for (uint32_t xx = 0; xx < uint32_t(m_dim); ++xx)
-					{
-						float mtxR[16];
-						bx::mtxRotateXYZ(mtxR, time + xx*0.21f, time + yy*0.37f, time + yy*0.13f);
-
-						float mtx[16];
-						bx::mtxMul(mtx, mtxS, mtxR);
-
-						mtx[12] = pos[0] + float(xx)*step;
-						mtx[13] = pos[1] + float(yy)*step;
-						mtx[14] = pos[2] + float(zz)*step;
-
-						// Set model matrix for rendering.
-						bgfx::setTransform(mtx);
-
-						// Set vertex and index buffer.
-						bgfx::setVertexBuffer(0, m_vbh);
-						bgfx::setIndexBuffer(m_ibh);
-
-						// Set render states.
-						bgfx::setState(BGFX_STATE_DEFAULT);
-
-						// Submit primitive for rendering to view 0.
-						bgfx::submit(0, m_program);
-					}
+					m_thread[ii].push(reinterpret_cast<void*>(uintptr_t(numThreads) ) );
 				}
+
+				for (uint32_t ii = 0; ii < numThreads; ++ii)
+				{
+					m_sync.wait();
+				}
+			}
+			else
+			{
+				submit(0, 0, uint32_t(m_dim) );
 			}
 
 			// Advance to next frame. Rendering thread will be kicked to
@@ -333,6 +434,8 @@ public:
 	int32_t  m_dim;
 	int32_t  m_maxDim;
 	int32_t  m_transform;
+	int32_t  m_numThreads;
+	int32_t  m_maxThreads;
 
 	int64_t  m_timeOffset;
 
@@ -340,10 +443,19 @@ public:
 	int64_t  m_deltaTimeAvgNs;
 	int64_t  m_numFrames;
 
+	bx::Thread m_thread[5];
+	bx::Semaphore m_sync;
+
 	bgfx::ProgramHandle m_program;
 	bgfx::VertexBufferHandle m_vbh;
 	bgfx::IndexBufferHandle  m_ibh;
 };
+
+int32_t threadFunc(bx::Thread* _thread, void* _userData)
+{
+	ExampleDrawStress* self = static_cast<ExampleDrawStress*>(_userData);
+	return self->thread(_thread);
+}
 
 } // namespace
 

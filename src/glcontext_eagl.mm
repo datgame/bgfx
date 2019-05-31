@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -176,10 +176,20 @@ namespace bgfx { namespace gl
 			, nil
 			];
 
-		EAGLContext* context = [ [EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
-		BX_CHECK(NULL != context, "Failed to create kEAGLRenderingAPIOpenGLES2 context.");
+		EAGLContext* context = (EAGLContext*)g_platformData.context;
+		if (NULL == context)
+		{
+			context = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES3];
+			if (NULL == context)
+			{
+				context = [[EAGLContext alloc] initWithAPI:kEAGLRenderingAPIOpenGLES2];
+			}
+		}
+		BX_CHECK(NULL != context, "No valid OpenGLES context.");
+
 		m_context = (void*)context;
 		[EAGLContext setCurrentContext:context];
+		[CATransaction flush];
 
 		GL_CHECK(glGenFramebuffers(1, &m_fbo) );
 		GL_CHECK(glBindFramebuffer(GL_FRAMEBUFFER, m_fbo) );

@@ -12,7 +12,7 @@
 #include <bgfx/bgfx.h>
 #include <bx/timer.h>
 #include <bx/readerwriter.h>
-#include <bx/fpumath.h>
+#include <bx/math.h>
 #include "entry/entry.h"
 #include "bgfx_utils.h"
 #include "imgui/imgui.h"
@@ -66,7 +66,7 @@ public:
 	{
 	}
 
-	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) BX_OVERRIDE
+	void init(int32_t _argc, const char* const* _argv, uint32_t _width, uint32_t _height) override
 	{
 		Args args(_argc, _argv);
 
@@ -75,14 +75,19 @@ public:
 		m_debug = BGFX_DEBUG_NONE;
 		m_reset = BGFX_RESET_VSYNC;
 
-		bgfx::init(args.m_type, args.m_pciId);
-		bgfx::reset(m_width, m_height, m_reset);
+		bgfx::Init init;
+		init.type     = args.m_type;
+		init.vendorId = args.m_pciId;
+		init.resolution.width  = m_width;
+		init.resolution.height = m_height;
+		init.resolution.reset  = m_reset;
+		bgfx::init(init);
 
 		// Enable debug text.
 		bgfx::setDebug(m_debug);
 
 		// Uniforms.
-		u_shadowMap = bgfx::createUniform("u_shadowMap", bgfx::UniformType::Int1);
+		s_shadowMap = bgfx::createUniform("s_shadowMap", bgfx::UniformType::Sampler);
 		u_lightPos  = bgfx::createUniform("u_lightPos",  bgfx::UniformType::Vec4);
 		u_lightMtx  = bgfx::createUniform("u_lightMtx",  bgfx::UniformType::Mat4);
 
@@ -141,7 +146,7 @@ public:
 					, false
 					, 1
 					, bgfx::TextureFormat::D16
-					, BGFX_TEXTURE_RT | BGFX_TEXTURE_COMPARE_LEQUAL
+					, BGFX_TEXTURE_RT | BGFX_SAMPLER_COMPARE_LEQUAL
 					),
 			};
 			shadowMapTexture = fbtextures[0];
@@ -179,9 +184,8 @@ public:
 
 		m_state[0] = meshStateCreate();
 		m_state[0]->m_state = 0
-			| BGFX_STATE_RGB_WRITE
-			| BGFX_STATE_ALPHA_WRITE
-			| BGFX_STATE_DEPTH_WRITE
+			| (m_shadowSamplerSupported ? 0 : BGFX_STATE_WRITE_RGB|BGFX_STATE_WRITE_A)
+			| BGFX_STATE_WRITE_Z
 			| BGFX_STATE_DEPTH_TEST_LESS
 			| BGFX_STATE_CULL_CCW
 			| BGFX_STATE_MSAA
@@ -192,9 +196,9 @@ public:
 
 		m_state[1] = meshStateCreate();
 		m_state[1]->m_state = 0
-			| BGFX_STATE_RGB_WRITE
-			| BGFX_STATE_ALPHA_WRITE
-			| BGFX_STATE_DEPTH_WRITE
+			| BGFX_STATE_WRITE_RGB
+			| BGFX_STATE_WRITE_A
+			| BGFX_STATE_WRITE_Z
 			| BGFX_STATE_DEPTH_TEST_LESS
 			| BGFX_STATE_CULL_CCW
 			| BGFX_STATE_MSAA
@@ -204,13 +208,13 @@ public:
 		m_state[1]->m_numTextures = 1;
 		m_state[1]->m_textures[0].m_flags = UINT32_MAX;
 		m_state[1]->m_textures[0].m_stage = 0;
-		m_state[1]->m_textures[0].m_sampler = u_shadowMap;
+		m_state[1]->m_textures[0].m_sampler = s_shadowMap;
 		m_state[1]->m_textures[0].m_texture = shadowMapTexture;
 
 		// Set view and projection matrices.
 
-		float eye[3] = { 0.0f, 30.0f, -60.0f };
-		float at[3]  = { 0.0f,  5.0f,   0.0f };
+		const bx::Vec3 at  = { 0.0f,  5.0f,   0.0f };
+		const bx::Vec3 eye = { 0.0f, 30.0f, -60.0f };
 		bx::mtxLookAt(m_view, eye, at);
 
 		const float aspect = float(int32_t(m_width) ) / float(int32_t(m_height) );
@@ -221,7 +225,7 @@ public:
 		imguiCreate();
 	}
 
-	virtual int shutdown() BX_OVERRIDE
+	virtual int shutdown() override
 	{
 		imguiDestroy();
 
@@ -232,18 +236,18 @@ public:
 		meshStateDestroy(m_state[0]);
 		meshStateDestroy(m_state[1]);
 
-		bgfx::destroyVertexBuffer(m_vbh);
-		bgfx::destroyIndexBuffer(m_ibh);
+		bgfx::destroy(m_vbh);
+		bgfx::destroy(m_ibh);
 
-		bgfx::destroyProgram(m_progShadow);
-		bgfx::destroyProgram(m_progMesh);
+		bgfx::destroy(m_progShadow);
+		bgfx::destroy(m_progMesh);
 
-		bgfx::destroyFrameBuffer(m_shadowMapFB);
+		bgfx::destroy(m_shadowMapFB);
 
-		bgfx::destroyUniform(u_shadowMap);
-		bgfx::destroyUniform(u_lightPos);
-		bgfx::destroyUniform(u_lightMtx);
-		bgfx::destroyUniform(u_depthScaleOffset);
+		bgfx::destroy(s_shadowMap);
+		bgfx::destroy(u_lightPos);
+		bgfx::destroy(u_lightMtx);
+		bgfx::destroy(u_depthScaleOffset);
 
 		// Shutdown bgfx.
 		bgfx::shutdown();
@@ -251,7 +255,7 @@ public:
 		return 0;
 	}
 
-	bool update() BX_OVERRIDE
+	bool update() override
 	{
 		if (!entry::processEvents(m_width, m_height, m_debug, m_reset, &m_mouseState) )
 		{
@@ -275,9 +279,9 @@ public:
 
 			// Setup lights.
 			float lightPos[4];
-			lightPos[0] = -bx::fcos(time);
+			lightPos[0] = -bx::cos(time);
 			lightPos[1] = -1.0f;
-			lightPos[2] = -bx::fsin(time);
+			lightPos[2] = -bx::sin(time);
 			lightPos[3] = 0.0f;
 
 			bgfx::setUniform(u_lightPos, lightPos);
@@ -315,9 +319,8 @@ public:
 			float lightView[16];
 			float lightProj[16];
 
-			float eye[3] = { -lightPos[0], -lightPos[1], -lightPos[2] };
-			float at[3]  = { 0.0f,  0.0f,   0.0f };
-
+			const bx::Vec3 at  = { 0.0f,  0.0f,   0.0f };
+			const bx::Vec3 eye = { -lightPos[0], -lightPos[1], -lightPos[2] };
 			bx::mtxLookAt(lightView, eye, at);
 
 			const bgfx::Caps* caps = bgfx::getCaps();
@@ -421,7 +424,7 @@ public:
 	uint32_t m_debug;
 	uint32_t m_reset;
 
-	bgfx::UniformHandle u_shadowMap;
+	bgfx::UniformHandle s_shadowMap;
 	bgfx::UniformHandle u_lightPos;
 	bgfx::UniformHandle u_lightMtx;
 

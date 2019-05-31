@@ -1,25 +1,22 @@
 /*
- * Copyright 2011-2017 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
 #include <algorithm>
-#include <vector>
-#include <string>
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
 
+#include <bx/string.h>
 #include <bgfx/bgfx.h>
 #include "../../src/vertexdecl.h"
 
 #include <tinystl/allocator.h>
+#include <tinystl/string.h>
 #include <tinystl/unordered_map.h>
 #include <tinystl/unordered_set.h>
+#include <tinystl/vector.h>
 namespace stl = tinystl;
 
-#include <forsyth-too/forsythtriangleorderoptimizer.h>
-#include <ib-compress/indexbuffercompression.h>
+#include <meshoptimizer/src/meshoptimizer.h>
 
 #define BGFX_GEOMETRYC_VERSION_MAJOR 1
 #define BGFX_GEOMETRYC_VERSION_MINOR 0
@@ -27,7 +24,7 @@ namespace stl = tinystl;
 #if 0
 #	define BX_TRACE(_format, ...) \
 		do { \
-			printf(BX_FILE_LINE_LITERAL "BGFX " _format "\n", ##__VA_ARGS__); \
+			bx::printf(BX_FILE_LINE_LITERAL "BGFX " _format "\n", ##__VA_ARGS__); \
 		} while(0)
 
 #	define BX_WARN(_condition, _format, ...) \
@@ -54,19 +51,12 @@ namespace stl = tinystl;
 #include <bx/timer.h>
 #include <bx/hash.h>
 #include <bx/uint32_t.h>
-#include <bx/fpumath.h>
-#include <bx/crtimpl.h>
+#include <bx/math.h>
+#include <bx/file.h>
 
 #include "bounds.h"
 
-struct Vector3
-{
-	float x;
-	float y;
-	float z;
-};
-
-typedef std::vector<Vector3> Vector3Array;
+typedef stl::vector<bx::Vec3> Vec3Array;
 
 struct Index3
 {
@@ -79,22 +69,22 @@ struct Index3
 
 typedef stl::unordered_map<uint64_t, Index3> Index3Map;
 
-struct Triangle
+struct TriIndices
 {
 	uint64_t m_index[3];
 };
 
-typedef std::vector<Triangle> TriangleArray;
+typedef stl::vector<TriIndices> TriangleArray;
 
 struct Group
 {
 	uint32_t m_startTriangle;
 	uint32_t m_numTriangles;
-	std::string m_name;
-	std::string m_material;
+	stl::string m_name;
+	stl::string m_material;
 };
 
-typedef std::vector<Group> GroupArray;
+typedef stl::vector<Group> GroupArray;
 
 struct Primitive
 {
@@ -102,62 +92,67 @@ struct Primitive
 	uint32_t m_startIndex;
 	uint32_t m_numVertices;
 	uint32_t m_numIndices;
-	std::string m_name;
+	stl::string m_name;
 };
 
-typedef std::vector<Primitive> PrimitiveArray;
+typedef stl::vector<Primitive> PrimitiveArray;
 
 static uint32_t s_obbSteps = 17;
 
 #define BGFX_CHUNK_MAGIC_VB  BX_MAKEFOURCC('V', 'B', ' ', 0x1)
+#define BGFX_CHUNK_MAGIC_VBC BX_MAKEFOURCC('V', 'B', 'C', 0x0)
 #define BGFX_CHUNK_MAGIC_IB  BX_MAKEFOURCC('I', 'B', ' ', 0x0)
-#define BGFX_CHUNK_MAGIC_IBC BX_MAKEFOURCC('I', 'B', 'C', 0x0)
+#define BGFX_CHUNK_MAGIC_IBC BX_MAKEFOURCC('I', 'B', 'C', 0x1)
 #define BGFX_CHUNK_MAGIC_PRI BX_MAKEFOURCC('P', 'R', 'I', 0x0)
 
-long int fsize(FILE* _file)
-{
-	long int pos = ftell(_file);
-	fseek(_file, 0L, SEEK_END);
-	long int size = ftell(_file);
-	fseek(_file, pos, SEEK_SET);
-	return size;
-}
-
-void triangleReorder(uint16_t* _indices, uint32_t _numIndices, uint32_t _numVertices, uint16_t _cacheSize)
+void optimizeVertexCache(uint16_t* _indices, uint32_t _numIndices, uint32_t _numVertices)
 {
 	uint16_t* newIndexList = new uint16_t[_numIndices];
-	Forsyth::OptimizeFaces(_indices, _numIndices, _numVertices, newIndexList, _cacheSize);
-	bx::memCopy(_indices, newIndexList, _numIndices*2);
-	delete [] newIndexList;
+	meshopt_optimizeVertexCache(newIndexList, _indices, _numIndices, _numVertices);
+	bx::memCopy(_indices, newIndexList, _numIndices * 2);
+	delete[] newIndexList;
 }
 
-void triangleCompress(bx::WriterI* _writer, uint16_t* _indices, uint32_t _numIndices, uint8_t* _vertexData, uint32_t _numVertices, uint16_t _stride)
+uint32_t optimizeVertexFetch(uint16_t* _indices, uint32_t _numIndices, uint8_t* _vertexData, uint32_t _numVertices, uint16_t _stride)
 {
-	uint32_t* vertexRemap = (uint32_t*)malloc(_numVertices*sizeof(uint32_t) );
+	unsigned char* newVertices = (unsigned char*)malloc(_numVertices * _stride );
+	size_t vertexCount = meshopt_optimizeVertexFetch(newVertices, _indices, _numIndices, _vertexData, _numVertices, _stride);
+	bx::memCopy(_vertexData, newVertices, _numVertices * _stride);
+	free(newVertices);
 
-	WriteBitstream writer;
-	CompressIndexBuffer(_indices, _numIndices/3, vertexRemap, _numVertices, IBCF_AUTO, writer);
-	writer.Finish();
-	printf( "uncompressed: %10d, compressed: %10d, ratio: %0.2f%%\n"
+	return uint32_t(vertexCount);
+}
+
+void writeCompressedIndices(bx::WriterI* _writer, const uint16_t* _indices, uint32_t _numIndices, uint32_t _numVertices)
+{
+	size_t maxSize = meshopt_encodeIndexBufferBound(_numIndices, _numVertices);
+	unsigned char* compressedIndices = (unsigned char*)malloc(maxSize);
+	size_t compressedSize = meshopt_encodeIndexBuffer(compressedIndices, maxSize, _indices, _numIndices);
+	bx::printf( "indices uncompressed: %10d, compressed: %10d, ratio: %0.2f%%\n"
 		, _numIndices*2
-		, (uint32_t)writer.ByteSize()
-		, 100.0f - float(writer.ByteSize() ) / float(_numIndices*2)*100.0f
+		, (uint32_t)compressedSize
+		, 100.0f - float(compressedSize ) / float(_numIndices*2)*100.0f
 		);
 
-	BX_UNUSED(_vertexData, _stride);
-	uint8_t* outVertexData = (uint8_t*)malloc(_numVertices*_stride);
-	for (uint32_t ii = 0; ii < _numVertices; ++ii)
-	{
-		uint32_t remap = vertexRemap[ii];
-		remap = UINT32_MAX == remap ? ii : remap;
-		bx::memCopy(&outVertexData[remap*_stride], &_vertexData[ii*_stride], _stride);
-	}
-	bx::memCopy(_vertexData, outVertexData, _numVertices*_stride);
-	free(outVertexData);
+	bx::write(_writer, (uint32_t)compressedSize);
+	bx::write(_writer, compressedIndices, (uint32_t)compressedSize );
+	free(compressedIndices);
+}
 
-	free(vertexRemap);
+void writeCompressedVertices(bx::WriterI* _writer,  const uint8_t* _vertices, uint32_t _numVertices, uint16_t _stride)
+{
+	size_t maxSize = meshopt_encodeVertexBufferBound(_numVertices, _stride);
+	unsigned char* compressedVertices = (unsigned char*)malloc(maxSize);
+	size_t compressedSize = meshopt_encodeVertexBuffer(compressedVertices, maxSize, _vertices, _numVertices, _stride);
+	bx::printf("vertices uncompressed: %10d, compressed: %10d, ratio: %0.2f%%\n"
+		, _numVertices * _stride
+		, (uint32_t)compressedSize
+		, 100.0f - float(compressedSize) / float(_numVertices * _stride)*100.0f
+		);
 
-	bx::write(_writer, writer.RawData(), (uint32_t)writer.ByteSize() );
+	bx::write(_writer, (uint32_t)compressedSize);
+	bx::write(_writer, compressedVertices, (uint32_t)compressedSize );
+	free(compressedVertices);
 }
 
 void calcTangents(void* _vertices, uint16_t _numVertices, bgfx::VertexDecl _decl, const uint16_t* _indices, uint32_t _numIndices)
@@ -236,25 +231,21 @@ void calcTangents(void* _vertices, uint16_t _numVertices, bgfx::VertexDecl _decl
 
 	for (uint32_t ii = 0; ii < _numVertices; ++ii)
 	{
-		const float* tanu = &tangents[ii*6];
-		const float* tanv = &tangents[ii*6 + 3];
+		const bx::Vec3 tanu = bx::load<bx::Vec3>(&tangents[ii*6]);
+		const bx::Vec3 tanv = bx::load<bx::Vec3>(&tangents[ii*6 + 3]);
 
-		float normal[4];
-		bgfx::vertexUnpack(normal, bgfx::Attrib::Normal, _decl, _vertices, ii);
-		float ndt = bx::vec3Dot(normal, tanu);
+		float nxyzw[4];
+		bgfx::vertexUnpack(nxyzw, bgfx::Attrib::Normal, _decl, _vertices, ii);
 
-		float nxt[3];
-		bx::vec3Cross(nxt, normal, tanu);
-
-		float tmp[3];
-		tmp[0] = tanu[0] - normal[0] * ndt;
-		tmp[1] = tanu[1] - normal[1] * ndt;
-		tmp[2] = tanu[2] - normal[2] * ndt;
+		const bx::Vec3 normal  = bx::load<bx::Vec3>(nxyzw);
+		const float    ndt     = bx::dot(normal, tanu);
+		const bx::Vec3 nxt     = bx::cross(normal, tanu);
+		const bx::Vec3 tmp     = bx::sub(tanu, bx::mul(normal, ndt) );
 
 		float tangent[4];
-		bx::vec3Norm(tangent, tmp);
+		bx::store(tangent, bx::normalize(tmp) );
+		tangent[3] = bx::dot(nxt, tanv) < 0.0f ? -1.0f : 1.0f;
 
-		tangent[3] = bx::vec3Dot(nxt, tanv) < 0.0f ? -1.0f : 1.0f;
 		bgfx::vertexPack(tangent, true, bgfx::Attrib::Tangent, _decl, _vertices, ii);
 	}
 
@@ -269,7 +260,7 @@ void write(bx::WriterI* _writer, const void* _vertices, uint32_t _numVertices, u
 	Sphere minSphere;
 	calcMinBoundingSphere(minSphere, _vertices, _numVertices, _stride);
 
-	if (minSphere.m_radius > maxSphere.m_radius)
+	if (minSphere.radius > maxSphere.radius)
 	{
 		bx::write(_writer, maxSphere);
 	}
@@ -293,9 +284,8 @@ void write(bx::WriterI* _writer
 		, const bgfx::VertexDecl& _decl
 		, const uint16_t* _indices
 		, uint32_t _numIndices
-		, const uint8_t* _compressedIndices
-		, uint32_t _compressedSize
-		, const std::string& _material
+		, bool _compress
+		, const stl::string& _material
 		, const PrimitiveArray& _primitives
 		)
 {
@@ -303,20 +293,33 @@ void write(bx::WriterI* _writer
 	using namespace bgfx;
 
 	uint32_t stride = _decl.getStride();
-	write(_writer, BGFX_CHUNK_MAGIC_VB);
-	write(_writer, _vertices, _numVertices, stride);
 
-	write(_writer, _decl);
+	if (_compress)
+	{
+		write(_writer, BGFX_CHUNK_MAGIC_VBC);
+		write(_writer, _vertices, _numVertices, stride);
 
-	write(_writer, uint16_t(_numVertices) );
-	write(_writer, _vertices, _numVertices*stride);
+		write(_writer, _decl);
 
-	if (NULL != _compressedIndices)
+		write(_writer, uint16_t(_numVertices) );
+		writeCompressedVertices(_writer, _vertices, _numVertices, uint16_t(stride));
+	}
+	else
+	{
+		write(_writer, BGFX_CHUNK_MAGIC_VB);
+		write(_writer, _vertices, _numVertices, stride);
+
+		write(_writer, _decl);
+
+		write(_writer, uint16_t(_numVertices) );
+		write(_writer, _vertices, _numVertices*stride);
+	}
+
+	if (_compress)
 	{
 		write(_writer, BGFX_CHUNK_MAGIC_IBC);
 		write(_writer, _numIndices);
-		write(_writer, _compressedSize);
-		write(_writer, _compressedIndices, _compressedSize);
+		writeCompressedIndices(_writer, _indices, _numIndices, _numVertices);
 	}
 	else
 	{
@@ -357,7 +360,7 @@ struct GroupSortByMaterial
 {
 	bool operator()(const Group& _lhs, const Group& _rhs)
 	{
-		return _lhs.m_material < _rhs.m_material;
+		return 0 < bx::strCmp(_lhs.m_material.c_str(), _rhs.m_material.c_str() );
 	}
 };
 
@@ -365,20 +368,20 @@ void help(const char* _error = NULL)
 {
 	if (NULL != _error)
 	{
-		fprintf(stderr, "Error:\n%s\n\n", _error);
+		bx::printf("Error:\n%s\n\n", _error);
 	}
 
-	fprintf(stderr
-		, "geometryc, bgfx geometry compiler tool, version %d.%d.%d.\n"
-		  "Copyright 2011-2017 Branimir Karadzic. All rights reserved.\n"
+	bx::printf(
+		  "geometryc, bgfx geometry compiler tool, version %d.%d.%d.\n"
+		  "Copyright 2011-2019 Branimir Karadzic. All rights reserved.\n"
 		  "License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause\n\n"
 		, BGFX_GEOMETRYC_VERSION_MAJOR
 		, BGFX_GEOMETRYC_VERSION_MINOR
 		, BGFX_API_VERSION
 		);
 
-	fprintf(stderr
-		, "Usage: geometryc -f <in> -o <out>\n"
+	bx::printf(
+		  "Usage: geometryc -f <in> -o <out>\n"
 
 		  "\n"
 		  "Supported input file types:\n"
@@ -417,8 +420,8 @@ int main(int _argc, const char* _argv[])
 
 	if (cmdLine.hasArg('v', "version") )
 	{
-		fprintf(stderr
-			, "geometryc, bgfx geometry compiler tool, version %d.%d.%d.\n"
+		bx::printf(
+			  "geometryc, bgfx geometry compiler tool, version %d.%d.%d.\n"
 			, BGFX_GEOMETRYC_VERSION_MAJOR
 			, BGFX_GEOMETRYC_VERSION_MINOR
 			, BGFX_API_VERSION
@@ -450,7 +453,10 @@ int main(int _argc, const char* _argv[])
 	const char* scaleArg = cmdLine.findOption('s', "scale");
 	if (NULL != scaleArg)
 	{
-		scale = (float)atof(scaleArg);
+		if (!bx::fromString(&scale, scaleArg))
+		{
+			scale = 1.0f;
+		}
 	}
 
 	bool compress = cmdLine.hasArg('c', "compress");
@@ -469,27 +475,29 @@ int main(int _argc, const char* _argv[])
 	bool hasTangent = cmdLine.hasArg("tangent");
 	bool hasBc = cmdLine.hasArg("barycentric");
 
-	FILE* file = fopen(filePath, "r");
-	if (NULL == file)
+	bx::FileReader fr;
+	if (!bx::open(&fr, filePath) )
 	{
-		printf("Unable to open input file '%s'.", filePath);
+		bx::printf("Unable to open input file '%s'.", filePath);
 		exit(bx::kExitFailure);
 	}
 
 	int64_t parseElapsed = -bx::getHPCounter();
 	int64_t triReorderElapsed = 0;
 
-	uint32_t size = (uint32_t)fsize(file);
+	uint32_t size = (uint32_t)bx::getSize(&fr);
 	char* data = new char[size+1];
-	size = (uint32_t)fread(data, 1, size, file);
+	size = bx::read(&fr, data, size);
 	data[size] = '\0';
-	fclose(file);
+	bx::close(&fr);
 
-	// https://en.wikipedia.org/wiki/Wavefront_.obj_file
+	// Reference(s):
+	// - Wavefront .obj file
+	//   https://en.wikipedia.org/wiki/Wavefront_.obj_file
 
-	Vector3Array positions;
-	Vector3Array normals;
-	Vector3Array texcoords;
+	Vec3Array positions;
+	Vec3Array normals;
+	Vec3Array texcoords;
 	Index3Map indexMap;
 	TriangleArray triangles;
 	GroupArray groups;
@@ -504,10 +512,11 @@ int main(int _argc, const char* _argv[])
 	uint32_t len = sizeof(commandLine);
 	int argc;
 	char* argv[64];
-	const char* next = data;
-	do
+
+	for (bx::StringView next(data, size); !next.isEmpty(); )
 	{
 		next = bx::tokenizeCommandLine(next, commandLine, len, argc, argv, BX_COUNTOF(argv), '\n');
+
 		if (0 < argc)
 		{
 			if (0 == bx::strCmp(argv[0], "#") )
@@ -519,8 +528,8 @@ int main(int _argc, const char* _argv[])
 			}
 			else if (0 == bx::strCmp(argv[0], "f") )
 			{
-				Triangle triangle;
-				bx::memSet(&triangle, 0, sizeof(Triangle) );
+				TriIndices triangle;
+				bx::memSet(&triangle, 0, sizeof(TriIndices) );
 
 				const int numNormals   = (int)normals.size();
 				const int numTexcoords = (int)texcoords.size();
@@ -540,60 +549,68 @@ int main(int _argc, const char* _argv[])
 						index.m_vbc = 0;
 					}
 
-					const char* vertex   = argv[edge+1];
-					char* texcoord = const_cast<char*>(bx::strFind(vertex, '/') );
-					if (NULL != texcoord)
 					{
-						*texcoord++ = '\0';
-
-						char* normal = const_cast<char*>(bx::strFind(texcoord, '/') );
-						if (NULL != normal)
+						bx::StringView triplet(argv[edge + 1]);
+						bx::StringView vertex(triplet);
+						bx::StringView texcoord = bx::strFind(triplet, '/');
+						if (!texcoord.isEmpty())
 						{
-							*normal++ = '\0';
-							const int nn = atoi(normal);
-							index.m_normal = (nn < 0) ? nn+numNormals : nn-1;
+							vertex.set(vertex.getPtr(), texcoord.getPtr());
+
+							const bx::StringView normal = bx::strFind(bx::StringView(texcoord.getPtr() + 1, triplet.getTerm()), '/');
+							if (!normal.isEmpty())
+							{
+								int32_t nn;
+								bx::fromString(&nn, bx::StringView(normal.getPtr() + 1, triplet.getTerm()));
+								index.m_normal = (nn < 0) ? nn + numNormals : nn - 1;
+							}
+
+							texcoord.set(texcoord.getPtr() + 1, normal.getPtr());
+
+							// Reference(s):
+							// - Wavefront .obj file / Vertex normal indices without texture coordinate indices
+							//   https://en.wikipedia.org/wiki/Wavefront_.obj_file#Vertex_Normal_Indices_Without_Texture_Coordinate_Indices
+							if (!texcoord.isEmpty())
+							{
+								int32_t tex;
+								bx::fromString(&tex, texcoord);
+								index.m_texcoord = (tex < 0) ? tex + numTexcoords : tex - 1;
+							}
 						}
 
-						// https://en.wikipedia.org/wiki/Wavefront_.obj_file#Vertex_Normal_Indices_Without_Texture_Coordinate_Indices
-						if(*texcoord != '\0')
-						{
-							const int tex = atoi(texcoord);
-							index.m_texcoord = (tex < 0) ? tex+numTexcoords : tex-1;
-						}
+						int32_t pos;
+						bx::fromString(&pos, vertex);
+						index.m_position = (pos < 0) ? pos + numPositions : pos - 1;
 					}
 
-					const int pos = atoi(vertex);
-					index.m_position = (pos < 0) ? pos+numPositions : pos-1;
-
-					uint64_t hash0 = index.m_position;
-					uint64_t hash1 = uint64_t(index.m_texcoord)<<20;
-					uint64_t hash2 = uint64_t(index.m_normal)<<40;
-					uint64_t hash3 = uint64_t(index.m_vbc)<<60;
-					uint64_t hash = hash0^hash1^hash2^hash3;
+					const uint64_t hash0 = uint64_t(index.m_position)<< 0;
+					const uint64_t hash1 = uint64_t(index.m_texcoord)<<20;
+					const uint64_t hash2 = uint64_t(index.m_normal  )<<40;
+					const uint64_t hash3 = uint64_t(index.m_vbc     )<<60;
+					const uint64_t hash  = hash0^hash1^hash2^hash3;
 
 					stl::pair<Index3Map::iterator, bool> result = indexMap.insert(stl::make_pair(hash, index) );
 					if (!result.second)
 					{
 						Index3& oldIndex = result.first->second;
 						BX_UNUSED(oldIndex);
-						BX_CHECK(oldIndex.m_position == index.m_position
+						BX_CHECK(true
+							&& oldIndex.m_position == index.m_position
 							&& oldIndex.m_texcoord == index.m_texcoord
-							&& oldIndex.m_normal == index.m_normal
+							&& oldIndex.m_normal   == index.m_normal
 							, "Hash collision!"
 							);
 					}
 
 					switch (edge)
 					{
-					case 0:
-					case 1:
-					case 2:
+					case 0:	case 1:	case 2:
 						triangle.m_index[edge] = hash;
 						if (2 == edge)
 						{
 							if (ccw)
 							{
-								std::swap(triangle.m_index[1], triangle.m_index[2]);
+								bx::swap(triangle.m_index[1], triangle.m_index[2]);
 							}
 							triangles.push_back(triangle);
 						}
@@ -610,6 +627,7 @@ int main(int _argc, const char* _argv[])
 							triangle.m_index[1] = triangle.m_index[2];
 							triangle.m_index[2] = hash;
 						}
+
 						triangles.push_back(triangle);
 						break;
 					}
@@ -631,10 +649,10 @@ int main(int _argc, const char* _argv[])
 
 				if (0 == bx::strCmp(argv[0], "vn") )
 				{
-					Vector3 normal;
-					normal.x = (float)atof(argv[1]);
-					normal.y = (float)atof(argv[2]);
-					normal.z = (float)atof(argv[3]);
+					bx::Vec3 normal;
+					bx::fromString(&normal.x, argv[1]);
+					bx::fromString(&normal.y, argv[2]);
+					bx::fromString(&normal.z, argv[3]);
 
 					normals.push_back(normal);
 				}
@@ -644,22 +662,25 @@ int main(int _argc, const char* _argv[])
 					if (once)
 					{
 						once = false;
-						printf("warning: 'parameter space vertices' are unsupported.\n");
+						bx::printf("warning: 'parameter space vertices' are unsupported.\n");
 					}
 				}
 				else if (0 == bx::strCmp(argv[0], "vt") )
 				{
-					Vector3 texcoord;
-					texcoord.x = (float)atof(argv[1]);
+					bx::Vec3 texcoord;
 					texcoord.y = 0.0f;
 					texcoord.z = 0.0f;
+
+					bx::fromString(&texcoord.x, argv[1]);
+
 					switch (argc)
 					{
 					case 4:
-						texcoord.z = (float)atof(argv[3]);
-						// fallthrough
+						bx::fromString(&texcoord.z, argv[3]);
+						BX_FALLTHROUGH;
+
 					case 3:
-						texcoord.y = (float)atof(argv[2]);
+						bx::fromString(&texcoord.y, argv[2]);
 						break;
 
 					default:
@@ -670,13 +691,18 @@ int main(int _argc, const char* _argv[])
 				}
 				else
 				{
-					float px = (float)atof(argv[1]);
-					float py = (float)atof(argv[2]);
-					float pz = (float)atof(argv[3]);
-					float pw = 1.0f;
-					if (argc > 4)
+					float px, py, pz, pw;
+					bx::fromString(&px, argv[1]);
+					bx::fromString(&py, argv[2]);
+					bx::fromString(&pz, argv[3]);
+
+					if (argc == 5 || argc == 8)
 					{
-						pw = (float)atof(argv[4]);
+						bx::fromString(&pw, argv[4]);
+					}
+					else
+					{
+						pw = 1.0f;
 					}
 
 					float invW = scale/pw;
@@ -684,7 +710,7 @@ int main(int _argc, const char* _argv[])
 					py *= invW;
 					pz *= invW;
 
-					Vector3 pos;
+					bx::Vec3 pos;
 					pos.x = px;
 					pos.y = py;
 					pos.z = pz;
@@ -694,9 +720,9 @@ int main(int _argc, const char* _argv[])
 			}
 			else if (0 == bx::strCmp(argv[0], "usemtl") )
 			{
-				std::string material(argv[1]);
+				stl::string material(argv[1]);
 
-				if (material != group.m_material)
+				if (0 != bx::strCmp(material.c_str(), group.m_material.c_str() ) )
 				{
 					group.m_numTriangles = (uint32_t)(triangles.size() ) - group.m_startTriangle;
 					if (0 < group.m_numTriangles)
@@ -723,7 +749,6 @@ int main(int _argc, const char* _argv[])
 
 		++num;
 	}
-	while ('\0' != *next);
 
 	group.m_numTriangles = (uint32_t)(triangles.size() ) - group.m_startTriangle;
 	if (0 < group.m_numTriangles)
@@ -749,25 +774,35 @@ int main(int _argc, const char* _argv[])
 		hasNormal   = -1 != it->second.m_normal;
 		hasTexcoord = -1 != it->second.m_texcoord;
 
-		if (!hasTexcoord
-		&&  texcoords.size() == positions.size() )
+		if (!hasTexcoord)
 		{
-			hasTexcoord = true;
-
-			for (Index3Map::iterator jt = indexMap.begin(), jtEnd = indexMap.end(); jt != jtEnd; ++jt)
+			for (Index3Map::iterator jt = indexMap.begin(), jtEnd = indexMap.end(); jt != jtEnd && !hasTexcoord; ++jt)
 			{
-				jt->second.m_texcoord = jt->second.m_position;
+				hasTexcoord |= -1 != jt->second.m_texcoord;
+			}
+
+			if (hasTexcoord)
+			{
+				for (Index3Map::iterator jt = indexMap.begin(), jtEnd = indexMap.end(); jt != jtEnd; ++jt)
+				{
+					jt->second.m_texcoord = -1 == jt->second.m_texcoord ? 0 : jt->second.m_texcoord;
+				}
 			}
 		}
 
-		if (!hasNormal
-		&&  normals.size() == positions.size() )
+		if (!hasNormal)
 		{
-			hasNormal = true;
-
-			for (Index3Map::iterator jt = indexMap.begin(), jtEnd = indexMap.end(); jt != jtEnd; ++jt)
+			for (Index3Map::iterator jt = indexMap.begin(), jtEnd = indexMap.end(); jt != jtEnd && !hasNormal; ++jt)
 			{
-				jt->second.m_normal = jt->second.m_position;
+				hasNormal |= -1 != jt->second.m_normal;
+			}
+
+			if (hasNormal)
+			{
+				for (Index3Map::iterator jt = indexMap.begin(), jtEnd = indexMap.end(); jt != jtEnd; ++jt)
+				{
+					jt->second.m_normal = -1 == jt->second.m_normal ? 0 : jt->second.m_normal;
+				}
 			}
 		}
 	}
@@ -825,6 +860,7 @@ int main(int _argc, const char* _argv[])
 			break;
 		}
 	}
+
 	decl.end();
 
 	uint32_t stride = decl.getStride();
@@ -832,19 +868,22 @@ int main(int _argc, const char* _argv[])
 	uint16_t* indexData = new uint16_t[triangles.size() * 3];
 	int32_t numVertices = 0;
 	int32_t numIndices = 0;
-	int32_t numPrimitives = 0;
+
+	int32_t writtenPrimitives = 0;
+	int32_t writtenVertices = 0;
+	int32_t writtenIndices = 0;
 
 	uint8_t* vertices = vertexData;
 	uint16_t* indices = indexData;
 
-	std::string material = groups.begin()->m_material;
+	stl::string material = groups.begin()->m_material;
 
 	PrimitiveArray primitives;
 
 	bx::FileWriter writer;
 	if (!bx::open(&writer, outFilePath) )
 	{
-		printf("Unable to open output file '%s'.", outFilePath);
+		bx::printf("Unable to open output file '%s'.", outFilePath);
 		exit(bx::kExitFailure);
 	}
 
@@ -855,16 +894,20 @@ int main(int _argc, const char* _argv[])
 	uint32_t positionOffset = decl.getOffset(bgfx::Attrib::Position);
 	uint32_t color0Offset   = decl.getOffset(bgfx::Attrib::Color0);
 
-	bx::DefaultAllocator crtAllocator;
-	bx::MemoryBlock  memBlock(&crtAllocator);
+	Group sentinelGroup;
+	sentinelGroup.m_startTriangle = 0;
+	sentinelGroup.m_numTriangles = UINT32_MAX;
+	groups.push_back(sentinelGroup);
 
 	uint32_t ii = 0;
 	for (GroupArray::const_iterator groupIt = groups.begin(); groupIt != groups.end(); ++groupIt, ++ii)
 	{
+		bool sentinel = groupIt->m_startTriangle == 0 && groupIt->m_numTriangles == UINT32_MAX;
 		for (uint32_t tri = groupIt->m_startTriangle, end = tri + groupIt->m_numTriangles; tri < end; ++tri)
 		{
-			if (material != groupIt->m_material
-			||  65533 < numVertices)
+			if (0 != bx::strCmp(material.c_str(), groupIt->m_material.c_str() )
+			|| sentinel
+			||  65533 <= numVertices)
 			{
 				prim.m_numVertices = numVertices - prim.m_startVertex;
 				prim.m_numIndices  = numIndices  - prim.m_startIndex;
@@ -878,24 +921,14 @@ int main(int _argc, const char* _argv[])
 					calcTangents(vertexData, uint16_t(numVertices), decl, indexData, numIndices);
 				}
 
-				bx::MemoryWriter memWriter(&memBlock);
-
 				triReorderElapsed -= bx::getHPCounter();
 				for (PrimitiveArray::const_iterator primIt = primitives.begin(); primIt != primitives.end(); ++primIt)
 				{
 					const Primitive& prim1 = *primIt;
-					triangleReorder(indexData + prim1.m_startIndex, prim1.m_numIndices, numVertices, 32);
-					if (compress)
-					{
-						triangleCompress(&memWriter
-							, indexData  + prim1.m_startIndex
-							, prim1.m_numIndices
-							, vertexData + prim1.m_startVertex
-							, numVertices
-							, uint16_t(stride)
-							);
-					}
+					optimizeVertexCache(indexData + prim1.m_startIndex, prim1.m_numIndices, numVertices);
 				}
+				numVertices = optimizeVertexFetch(indexData, numIndices, vertexData, numVertices, uint16_t(stride));
+
 				triReorderElapsed += bx::getHPCounter();
 
 				write(&writer
@@ -904,8 +937,7 @@ int main(int _argc, const char* _argv[])
 					, decl
 					, indexData
 					, numIndices
-					, (uint8_t*)memBlock.more()
-					, memBlock.getSize()
+					, compress
 					, material
 					, primitives
 					);
@@ -916,18 +948,24 @@ int main(int _argc, const char* _argv[])
 					indexIt->second.m_vertexIndex = -1;
 				}
 
+				++writtenPrimitives;
+				writtenVertices += numVertices;
+				writtenIndices += numIndices;
+
 				vertices = vertexData;
-				indices = indexData;
+				indices  = indexData;
 				numVertices = 0;
-				numIndices = 0;
+				numIndices  = 0;
 				prim.m_startVertex = 0;
-				prim.m_startIndex = 0;
-				++numPrimitives;
+				prim.m_startIndex  = 0;
 
 				material = groupIt->m_material;
+
+				if (sentinel)
+					break;
 			}
 
-			Triangle& triangle = triangles[tri];
+			TriIndices& triangle = triangles[tri];
 			for (uint32_t edge = 0; edge < 3; ++edge)
 			{
 				uint64_t hash = triangle.m_index[edge];
@@ -972,7 +1010,7 @@ int main(int _argc, const char* _argv[])
 					if (hasNormal)
 					{
 						float normal[4];
-						bx::vec3Norm(normal, (float*)&normals[index.m_normal]);
+						bx::store(normal, bx::normalize(bx::load<bx::Vec3>(&normals[index.m_normal]) ) );
 						bgfx::vertexPack(normal, true, bgfx::Attrib::Normal, decl, vertices);
 					}
 
@@ -1002,47 +1040,9 @@ int main(int _argc, const char* _argv[])
 			);
 	}
 
-	if (0 < primitives.size() )
-	{
-		if (hasTangent)
-		{
-			calcTangents(vertexData, uint16_t(numVertices), decl, indexData, numIndices);
-		}
+	BX_CHECK(0 == primitives.size(), "Not all primitives are written");
 
-		bx::MemoryWriter memWriter(&memBlock);
-
-		triReorderElapsed -= bx::getHPCounter();
-		for (PrimitiveArray::const_iterator primIt = primitives.begin(); primIt != primitives.end(); ++primIt)
-		{
-			const Primitive& prim1 = *primIt;
-			triangleReorder(indexData + prim1.m_startIndex, prim1.m_numIndices, numVertices, 32);
-			if (compress)
-			{
-				triangleCompress(&memWriter
-					, indexData  + prim1.m_startIndex
-					, prim1.m_numIndices
-					, vertexData + prim1.m_startVertex
-					, numVertices
-					, uint16_t(stride)
-					);
-			}
-		}
-		triReorderElapsed += bx::getHPCounter();
-
-		write(&writer
-			, vertexData
-			, numVertices
-			, decl
-			, indexData
-			, numIndices
-			, (uint8_t*)memBlock.more()
-			, memBlock.getSize()
-			, material
-			, primitives
-			);
-	}
-
-	printf("size: %d\n", uint32_t(bx::seek(&writer) ) );
+	bx::printf("size: %d\n", uint32_t(bx::seek(&writer) ) );
 	bx::close(&writer);
 
 	delete [] indexData;
@@ -1051,15 +1051,15 @@ int main(int _argc, const char* _argv[])
 	now = bx::getHPCounter();
 	convertElapsed += now;
 
-	printf("parse %f [s]\ntri reorder %f [s]\nconvert %f [s]\n# %d, g %d, p %d, v %d, i %d\n"
+	bx::printf("parse %f [s]\ntri reorder %f [s]\nconvert %f [s]\n# %d, g %d, p %d, v %d, i %d\n"
 		, double(parseElapsed)/bx::getHPFrequency()
 		, double(triReorderElapsed)/bx::getHPFrequency()
 		, double(convertElapsed)/bx::getHPFrequency()
 		, num
 		, uint32_t(groups.size() )
-		, numPrimitives
-		, numVertices
-		, numIndices
+		, writtenPrimitives
+		, writtenVertices
+		, writtenIndices
 		);
 
 	return bx::kExitSuccess;

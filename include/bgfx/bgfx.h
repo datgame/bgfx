@@ -614,6 +614,7 @@ namespace bgfx
 	///
 	struct PlatformData
 	{
+        BGFX_SHARED_LIB_API
 		PlatformData();
 
 		void* ndt;          //!< Native display type.
@@ -645,6 +646,7 @@ namespace bgfx
 	///
 	struct Init
 	{
+        BGFX_SHARED_LIB_API
 		Init();
 
 		/// Select rendering backend. When set to RendererType::Count

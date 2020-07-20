@@ -1,5 +1,5 @@
 /*
- * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2020 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
  */
 
@@ -10,7 +10,7 @@
 #include "dxgi.h"
 #include "renderer_d3d.h"
 
-#if !BX_PLATFORM_WINDOWS
+#if !BX_PLATFORM_WINDOWS && !BX_PLATFORM_LINUX
 #	include <inspectable.h>
 #	if BX_PLATFORM_WINRT
 #		include <windows.ui.xaml.media.dxinterop.h>

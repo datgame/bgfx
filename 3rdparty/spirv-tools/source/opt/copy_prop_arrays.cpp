@@ -29,6 +29,12 @@ const uint32_t kCompositeExtractObjectInOperand = 0;
 const uint32_t kTypePointerStorageClassInIdx = 0;
 const uint32_t kTypePointerPointeeInIdx = 1;
 
+bool IsOpenCL100DebugDeclareOrValue(Instruction* di) {
+  auto dbg_opcode = di->GetOpenCL100DebugOpcode();
+  return dbg_opcode == OpenCLDebugInfo100DebugDeclare ||
+         dbg_opcode == OpenCLDebugInfo100DebugValue;
+}
+
 }  // namespace
 
 Pass::Status CopyPropagateArrays::Process() {
@@ -188,6 +194,8 @@ bool CopyPropagateArrays::HasValidReferencesOnly(Instruction* ptr_inst,
           return ptr_inst->opcode() == SpvOpVariable &&
                  store_inst->GetSingleWordInOperand(kStorePointerInOperand) ==
                      ptr_inst->result_id();
+        } else if (IsOpenCL100DebugDeclareOrValue(use)) {
+          return true;
         }
         // Some other instruction.  Be conservative.
         return false;
@@ -306,8 +314,7 @@ CopyPropagateArrays::BuildMemoryObjectFromCompositeConstruct(
   analysis::ConstantManager* const_mgr = context()->get_constant_mgr();
   const analysis::Constant* last_access =
       const_mgr->FindDeclaredConstant(memory_object->AccessChain().back());
-  if (!last_access ||
-      (!last_access->AsIntConstant() && !last_access->AsNullConstant())) {
+  if (!last_access || !last_access->type()->AsInteger()) {
     return nullptr;
   }
 
@@ -340,7 +347,7 @@ CopyPropagateArrays::BuildMemoryObjectFromCompositeConstruct(
 
     last_access =
         const_mgr->FindDeclaredConstant(member_object->AccessChain().back());
-    if (!last_access || !last_access->AsIntConstant()) {
+    if (!last_access || !last_access->type()->AsInteger()) {
       return nullptr;
     }
 
@@ -368,8 +375,7 @@ CopyPropagateArrays::BuildMemoryObjectFromInsert(Instruction* insert_inst) {
   } else if (const analysis::Array* array_type = result_type->AsArray()) {
     const analysis::Constant* length_const =
         const_mgr->FindDeclaredConstant(array_type->LengthId());
-    assert(length_const->AsIntConstant());
-    number_of_elements = length_const->AsIntConstant()->GetU32();
+    number_of_elements = length_const->GetU32();
   } else if (const analysis::Vector* vector_type = result_type->AsVector()) {
     number_of_elements = vector_type->element_count();
   } else if (const analysis::Matrix* matrix_type = result_type->AsMatrix()) {
@@ -401,7 +407,7 @@ CopyPropagateArrays::BuildMemoryObjectFromInsert(Instruction* insert_inst) {
 
   const analysis::Constant* last_access =
       const_mgr->FindDeclaredConstant(memory_object->AccessChain().back());
-  if (!last_access || !last_access->AsIntConstant()) {
+  if (!last_access || !last_access->type()->AsInteger()) {
     return nullptr;
   }
 
@@ -449,7 +455,7 @@ CopyPropagateArrays::BuildMemoryObjectFromInsert(Instruction* insert_inst) {
     const analysis::Constant* current_last_access =
         const_mgr->FindDeclaredConstant(
             current_memory_object->AccessChain().back());
-    if (!current_last_access || !current_last_access->AsIntConstant()) {
+    if (!current_last_access || !current_last_access->type()->AsInteger()) {
       return nullptr;
     }
 
@@ -494,6 +500,8 @@ bool CopyPropagateArrays::CanUpdateUses(Instruction* original_ptr_inst,
                                                        const_mgr,
                                                        type](Instruction* use,
                                                              uint32_t) {
+    if (IsOpenCL100DebugDeclareOrValue(use)) return true;
+
     switch (use->opcode()) {
       case SpvOpLoad: {
         analysis::Pointer* pointer_type = type->AsPointer();
@@ -513,7 +521,7 @@ bool CopyPropagateArrays::CanUpdateUses(Instruction* original_ptr_inst,
           const analysis::Constant* index_const =
               const_mgr->FindDeclaredConstant(use->GetSingleWordInOperand(i));
           if (index_const) {
-            access_chain.push_back(index_const->AsIntConstant()->GetU32());
+            access_chain.push_back(index_const->GetU32());
           } else {
             // Variable index means the type is a type where every element
             // is the same type.  Use element 0 to get the type.
@@ -527,6 +535,9 @@ bool CopyPropagateArrays::CanUpdateUses(Instruction* original_ptr_inst,
                                     pointer_type->storage_class());
         uint32_t new_pointer_type_id =
             context()->get_type_mgr()->GetTypeInstruction(&pointerTy);
+        if (new_pointer_type_id == 0) {
+          return false;
+        }
 
         if (new_pointer_type_id != use->type_id()) {
           return CanUpdateUses(use, new_pointer_type_id);
@@ -542,6 +553,9 @@ bool CopyPropagateArrays::CanUpdateUses(Instruction* original_ptr_inst,
         const analysis::Type* new_type =
             type_mgr->GetMemberType(type, access_chain);
         uint32_t new_type_id = type_mgr->GetTypeInstruction(new_type);
+        if (new_type_id == 0) {
+          return false;
+        }
 
         if (new_type_id != use->type_id()) {
           return CanUpdateUses(use, new_type_id);
@@ -561,6 +575,7 @@ bool CopyPropagateArrays::CanUpdateUses(Instruction* original_ptr_inst,
     }
   });
 }
+
 void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
                                      Instruction* new_ptr_inst) {
   analysis::TypeManager* type_mgr = context()->get_type_mgr();
@@ -576,6 +591,52 @@ void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
   for (auto pair : uses) {
     Instruction* use = pair.first;
     uint32_t index = pair.second;
+
+    if (use->IsOpenCL100DebugInstr()) {
+      switch (use->GetOpenCL100DebugOpcode()) {
+        case OpenCLDebugInfo100DebugDeclare: {
+          if (new_ptr_inst->opcode() == SpvOpVariable ||
+              new_ptr_inst->opcode() == SpvOpFunctionParameter) {
+            context()->ForgetUses(use);
+            use->SetOperand(index, {new_ptr_inst->result_id()});
+            context()->AnalyzeUses(use);
+          } else {
+            // Based on the spec, we cannot use a pointer other than OpVariable
+            // or OpFunctionParameter for DebugDeclare. We have to use
+            // DebugValue with Deref.
+
+            context()->ForgetUses(use);
+
+            // Change DebugDeclare to DebugValue.
+            use->SetOperand(
+                index - 2,
+                {static_cast<uint32_t>(OpenCLDebugInfo100DebugValue)});
+            use->SetOperand(index, {new_ptr_inst->result_id()});
+
+            // Add Deref operation.
+            Instruction* dbg_expr =
+                def_use_mgr->GetDef(use->GetSingleWordOperand(index + 1));
+            auto* deref_expr_instr =
+                context()->get_debug_info_mgr()->DerefDebugExpression(dbg_expr);
+            use->SetOperand(index + 1, {deref_expr_instr->result_id()});
+
+            context()->AnalyzeUses(deref_expr_instr);
+            context()->AnalyzeUses(use);
+          }
+          break;
+        }
+        case OpenCLDebugInfo100DebugValue:
+          context()->ForgetUses(use);
+          use->SetOperand(index, {new_ptr_inst->result_id()});
+          context()->AnalyzeUses(use);
+          break;
+        default:
+          assert(false && "Don't know how to rewrite instruction");
+          break;
+      }
+      continue;
+    }
+
     switch (use->opcode()) {
       case SpvOpLoad: {
         // Replace the actual use.
@@ -607,7 +668,7 @@ void CopyPropagateArrays::UpdateUses(Instruction* original_ptr_inst,
           const analysis::Constant* index_const =
               const_mgr->FindDeclaredConstant(use->GetSingleWordInOperand(i));
           if (index_const) {
-            access_chain.push_back(index_const->AsIntConstant()->GetU32());
+            access_chain.push_back(index_const->GetU32());
           } else {
             // Variable index means the type is an type where every element
             // is the same type.  Use element 0 to get the type.
@@ -743,8 +804,8 @@ uint32_t CopyPropagateArrays::MemoryObject::GetNumberOfMembers() {
     const analysis::Constant* length_const =
         context->get_constant_mgr()->FindDeclaredConstant(
             array_type->LengthId());
-    assert(length_const->AsIntConstant());
-    return length_const->AsIntConstant()->GetU32();
+    assert(length_const->type()->AsInteger());
+    return length_const->GetU32();
   } else if (const analysis::Vector* vector_type = type->AsVector()) {
     return vector_type->element_count();
   } else if (const analysis::Matrix* matrix_type = type->AsMatrix()) {
@@ -770,8 +831,7 @@ std::vector<uint32_t> CopyPropagateArrays::MemoryObject::GetAccessIds() const {
     if (!element_index_const) {
       access_indices.push_back(0);
     } else {
-      assert(element_index_const->AsIntConstant());
-      access_indices.push_back(element_index_const->AsIntConstant()->GetU32());
+      access_indices.push_back(element_index_const->GetU32());
     }
   }
   return access_indices;

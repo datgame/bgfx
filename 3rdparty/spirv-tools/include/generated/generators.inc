@@ -20,3 +20,5 @@
 {19, "Clay", "Clay Shader Compiler", "Clay Clay Shader Compiler"},
 {20, "W3C WebGPU Group", "WHLSL Shader Translator", "W3C WebGPU Group WHLSL Shader Translator"},
 {21, "Google", "Clspv", "Google Clspv"},
+{22, "Google", "MLIR SPIR-V Serializer", "Google MLIR SPIR-V Serializer"},
+{23, "Google", "Tint Compiler", "Google Tint Compiler"},

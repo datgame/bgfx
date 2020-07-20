@@ -1,12 +1,21 @@
 /*
- * Copyright 2011-2019 Branimir Karadzic. All rights reserved.
+ * Copyright 2011-2020 Branimir Karadzic. All rights reserved.
  * License: https://github.com/bkaradzic/bgfx#license-bsd-2-clause
+ */
+
+/*
+ *
+ * AUTO GENERATED FROM IDL! DO NOT EDIT! (source : temp.defines.h)
+ *
+ * More info about IDL:
+ * https://gist.github.com/bkaradzic/05a1c86a6dd57bf86e2d828878e88dc2#bgfx-is-switching-to-idl-to-generate-api
+ *
  */
 
 #ifndef BGFX_DEFINES_H_HEADER_GUARD
 #define BGFX_DEFINES_H_HEADER_GUARD
 
-#define BGFX_API_VERSION UINT32_C(99)
+#define BGFX_API_VERSION UINT32_C(108)
 
 /**
  * Color RGB/alpha/depth write. When it's not specified write will be disabled.
@@ -122,6 +131,7 @@
 #define BGFX_STATE_LINEAA                   UINT64_C(0x0200000000000000) //!< Enable line AA rasterization.
 #define BGFX_STATE_CONSERVATIVE_RASTER      UINT64_C(0x0400000000000000) //!< Enable conservative rasterization.
 #define BGFX_STATE_NONE                     UINT64_C(0x0000000000000000) //!< No state.
+#define BGFX_STATE_FRONT_CCW                UINT64_C(0x0000008000000000) //!< Front counter-clockwise (default is clockwise).
 #define BGFX_STATE_BLEND_INDEPENDENT        UINT64_C(0x0000000400000000) //!< Enable blend independent.
 #define BGFX_STATE_BLEND_ALPHA_TO_COVERAGE  UINT64_C(0x0000000800000000) //!< Enable alpha to coverage.
 /// Default state is write to RGB, alpha, and depth with depth test less enabled, with clockwise
@@ -243,9 +253,26 @@
 	)
 
 
+/**
+ * Rendering state discard. When state is preserved in submit, rendering states can be discarded
+ * on a finer grain.
+ *
+ */
+#define BGFX_DISCARD_NONE                   UINT8_C(0x00) //!< Preserve everything.
+#define BGFX_DISCARD_BINDINGS               UINT8_C(0x01) //!< Discard texture sampler and buffer bindings.
+#define BGFX_DISCARD_INDEX_BUFFER           UINT8_C(0x02) //!< Discard index buffer.
+#define BGFX_DISCARD_INSTANCE_DATA          UINT8_C(0x04) //!< Discard instance data.
+#define BGFX_DISCARD_STATE                  UINT8_C(0x08) //!< Discard state.
+#define BGFX_DISCARD_TRANSFORM              UINT8_C(0x10) //!< Discard transform.
+#define BGFX_DISCARD_VERTEX_STREAMS         UINT8_C(0x20) //!< Discard vertex streams.
+#define BGFX_DISCARD_ALL                    UINT8_C(0xff) //!< Discard all states.
+
 #define BGFX_DEBUG_NONE                     UINT32_C(0x00000000) //!< No debug.
 #define BGFX_DEBUG_WIREFRAME                UINT32_C(0x00000001) //!< Enable wireframe for all primitives.
-#define BGFX_DEBUG_IFH                      UINT32_C(0x00000002) //!< Enable infinitely fast hardware test. No draw calls will be submitted to driver. It’s useful when profiling to quickly assess bottleneck between CPU and GPU.
+
+/// Enable infinitely fast hardware test. No draw calls will be submitted to driver.
+/// It's useful when profiling to quickly assess bottleneck between CPU and GPU.
+#define BGFX_DEBUG_IFH                      UINT32_C(0x00000002)
 #define BGFX_DEBUG_STATS                    UINT32_C(0x00000004) //!< Enable statistics display.
 #define BGFX_DEBUG_TEXT                     UINT32_C(0x00000008) //!< Enable debug text display.
 #define BGFX_DEBUG_PROFILER                 UINT32_C(0x00000010) //!< Enable profiler.
@@ -417,7 +444,10 @@
 #define BGFX_RESET_MAXANISOTROPY            UINT32_C(0x00000100) //!< Turn on/off max anisotropy.
 #define BGFX_RESET_CAPTURE                  UINT32_C(0x00000200) //!< Begin screen capture.
 #define BGFX_RESET_FLUSH_AFTER_RENDER       UINT32_C(0x00002000) //!< Flush rendering after submitting to GPU.
-#define BGFX_RESET_FLIP_AFTER_RENDER        UINT32_C(0x00004000) //!< This flag  specifies where flip occurs. Default behavior is that flip occurs before rendering new frame. This flag only has effect when `BGFX_CONFIG_MULTITHREADED=0`.
+
+/// This flag specifies where flip occurs. Default behaviour is that flip occurs
+/// before rendering new frame. This flag only has effect when `BGFX_CONFIG_MULTITHREADED=0`.
+#define BGFX_RESET_FLIP_AFTER_RENDER        UINT32_C(0x00004000)
 #define BGFX_RESET_SRGB_BACKBUFFER          UINT32_C(0x00008000) //!< Enable sRGB backbuffer.
 #define BGFX_RESET_HDR10                    UINT32_C(0x00010000) //!< Enable HDR10 rendering.
 #define BGFX_RESET_HIDPI                    UINT32_C(0x00020000) //!< Enable HiDPI rendering.

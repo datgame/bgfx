@@ -97,9 +97,7 @@ class Function {
   /// Registers the end of the block
   ///
   /// @param[in] successors_list A list of ids to the block's successors
-  /// @param[in] branch_instruction the branch instruction that ended the block
-  void RegisterBlockEnd(std::vector<uint32_t> successors_list,
-                        SpvOp branch_instruction);
+  void RegisterBlockEnd(std::vector<uint32_t> successors_list);
 
   /// Registers the end of the function.  This is idempotent.
   void RegisterFunctionEnd();
@@ -215,6 +213,16 @@ class Function {
       std::function<bool(SpvExecutionModel, std::string*)> is_compatible) {
     execution_model_limitations_.push_back(is_compatible);
   }
+
+  /// Registers limitation with an |is_compatible| functor.
+  void RegisterLimitation(std::function<bool(const ValidationState_t& _,
+                                             const Function*, std::string*)>
+                              is_compatible) {
+    limitations_.push_back(is_compatible);
+  }
+
+  bool CheckLimitations(const ValidationState_t& _, const Function* entry_point,
+                        std::string* reason) const;
 
   /// Returns true if the given execution model passes the limitations stored in
   /// execution_model_limitations_. Returns false otherwise and fills optional
@@ -375,6 +383,12 @@ class Function {
   /// optionally fill the string parameter with the reason for incompatibility.
   std::list<std::function<bool(SpvExecutionModel, std::string*)>>
       execution_model_limitations_;
+
+  /// Stores limitations imposed by instructions used within the function.
+  /// Similar to execution_model_limitations_;
+  std::list<std::function<bool(const ValidationState_t& _, const Function*,
+                               std::string*)>>
+      limitations_;
 
   /// Stores ids of all functions called from this function.
   std::set<uint32_t> function_call_targets_;

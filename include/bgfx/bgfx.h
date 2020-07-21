@@ -1027,6 +1027,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_marker`.
 		///
+BGFX_SHARED_LIB_API
 		void setMarker(const char* _marker);
 
 		/// Set render states for draw primitive.
@@ -1057,6 +1058,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_state`.
 		///
+BGFX_SHARED_LIB_API
 		void setState(
 			  uint64_t _state
 			, uint32_t _rgba = 0
@@ -1069,6 +1071,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_condition`.
 		///
+BGFX_SHARED_LIB_API
 		void setCondition(
 			  OcclusionQueryHandle _handle
 			, bool _visible
@@ -1082,6 +1085,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_stencil`.
 		///
+BGFX_SHARED_LIB_API
 		void setStencil(
 			  uint32_t _fstencil
 			, uint32_t _bstencil = BGFX_STENCIL_NONE
@@ -1098,6 +1102,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_scissor`.
 		///
+BGFX_SHARED_LIB_API
 		uint16_t setScissor(
 			  uint16_t _x
 			, uint16_t _y
@@ -1112,6 +1117,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_scissor_cached`.
 		///
+BGFX_SHARED_LIB_API
 		void setScissor(uint16_t _cache = UINT16_MAX);
 
 		/// Set model matrix for draw primitive. If it is not called, model will
@@ -1124,6 +1130,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_transform`.
 		///
+BGFX_SHARED_LIB_API
 		uint32_t setTransform(
 			  const void* _mtx
 			, uint16_t _num = 1
@@ -1138,6 +1145,7 @@ namespace bgfx
 		/// @attention Pointer returned can be modifed until `bgfx::frame` is called.
 		/// @attention C99 equivalent is `bgfx_encoder_alloc_transform`.
 		///
+BGFX_SHARED_LIB_API
 		uint32_t allocTransform(
 			  Transform* _transform
 			, uint16_t _num
@@ -1150,6 +1158,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_transform_cached`.
 		///
+BGFX_SHARED_LIB_API
 		void setTransform(
 			  uint32_t _cache
 			, uint16_t _num = 1
@@ -1164,6 +1173,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_uniform`.
 		///
+BGFX_SHARED_LIB_API
 		void setUniform(
 			  UniformHandle _handle
 			, const void* _value
@@ -1176,6 +1186,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setIndexBuffer(IndexBufferHandle _handle);
 
 		/// Set index buffer for draw primitive.
@@ -1186,6 +1197,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setIndexBuffer(
 			  IndexBufferHandle _handle
 			, uint32_t _firstIndex
@@ -1198,6 +1210,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_dynamic_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setIndexBuffer(DynamicIndexBufferHandle _handle);
 
 		/// Set index buffer for draw primitive.
@@ -1208,6 +1221,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_dynamic_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setIndexBuffer(
 			  DynamicIndexBufferHandle _handle
 			, uint32_t _firstIndex
@@ -1220,6 +1234,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_transient_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setIndexBuffer(const TransientIndexBuffer* _tib);
 
 		/// Set index buffer for draw primitive.
@@ -1230,6 +1245,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_transient_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setIndexBuffer(
 			  const TransientIndexBuffer* _tib
 			, uint32_t _firstIndex
@@ -1243,6 +1259,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setVertexBuffer(
 			  uint8_t _stream
 			, VertexBufferHandle _handle
@@ -1259,6 +1276,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setVertexBuffer(
 			  uint8_t _stream
 			, VertexBufferHandle _handle
@@ -1274,6 +1292,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_dynamic_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setVertexBuffer(
 			  uint8_t _stream
 			, DynamicVertexBufferHandle _handle
@@ -1290,6 +1309,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_dynamic_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setVertexBuffer(
 			  uint8_t _stream
 			, DynamicVertexBufferHandle _handle
@@ -1305,6 +1325,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_transient_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setVertexBuffer(
 			  uint8_t _stream
 			, const TransientVertexBuffer* _tvb
@@ -1321,6 +1342,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_transient_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setVertexBuffer(
 			  uint8_t _stream
 			, const TransientVertexBuffer* _tvb
@@ -1337,6 +1359,7 @@ namespace bgfx
 		/// @attention Availability depends on: `BGFX_CAPS_VERTEX_ID`.
 		/// @attention C99 equivalent is `bgfx_encoder_set_vertex_count`.
 		///
+BGFX_SHARED_LIB_API
 		void setVertexCount(uint32_t _numVertices);
 
 		/// Set instance data buffer for draw primitive.
@@ -1345,6 +1368,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_instance_data_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setInstanceDataBuffer(const InstanceDataBuffer* _idb);
 
 		/// Set instance data buffer for draw primitive.
@@ -1355,6 +1379,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_instance_data_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setInstanceDataBuffer(
 			  const InstanceDataBuffer* _idb
 			, uint32_t _start
@@ -1369,6 +1394,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_instance_data_from_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setInstanceDataBuffer(
 			  VertexBufferHandle _handle
 			, uint32_t _start
@@ -1383,6 +1409,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_instance_data_from_dynamic_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setInstanceDataBuffer(
 			  DynamicVertexBufferHandle _handle
 			, uint32_t _start
@@ -1397,6 +1424,7 @@ namespace bgfx
 		/// @attention Availability depends on: `BGFX_CAPS_VERTEX_ID`.
 		/// @attention C99 equivalent is `bgfx_encoder_set_instance_count`.
 		///
+BGFX_SHARED_LIB_API
 		void setInstanceCount(uint32_t _numInstances);
 
 		/// Set texture stage for draw primitive.
@@ -1413,6 +1441,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_texture`.
 		///
+BGFX_SHARED_LIB_API
 		void setTexture(
 			  uint8_t _stage
 			, UniformHandle _sampler
@@ -1431,6 +1460,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_touch`.
 		///
+BGFX_SHARED_LIB_API
 		void touch(ViewId _id);
 
 		/// Submit primitive for rendering.
@@ -1442,6 +1472,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_submit`.
 		///
+BGFX_SHARED_LIB_API
 		void submit(
 			  ViewId _id
 			, ProgramHandle _program
@@ -1459,6 +1490,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_submit_occlusion_query`.
 		///
+BGFX_SHARED_LIB_API
 		void submit(
 			  ViewId _id
 			, ProgramHandle _program
@@ -1480,6 +1512,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_submit_indirect`.
 		///
+BGFX_SHARED_LIB_API
 		void submit(
 			  ViewId _id
 			, ProgramHandle _program
@@ -1498,6 +1531,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_compute_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setBuffer(
 			  uint8_t _stage
 			, IndexBufferHandle _handle
@@ -1512,6 +1546,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_compute_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setBuffer(
 			  uint8_t _stage
 			, VertexBufferHandle _handle
@@ -1526,6 +1561,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_compute_dynamic_index_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setBuffer(
 			  uint8_t _stage
 			, DynamicIndexBufferHandle _handle
@@ -1540,6 +1576,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_compute_dynamic_vertex_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setBuffer(
 			  uint8_t _stage
 			, DynamicVertexBufferHandle _handle
@@ -1554,6 +1591,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_compute_indirect_buffer`.
 		///
+BGFX_SHARED_LIB_API
 		void setBuffer(
 			  uint8_t _stage
 			, IndirectBufferHandle _handle
@@ -1570,6 +1608,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_set_image`.
 		///
+BGFX_SHARED_LIB_API
 		void setImage(
 			  uint8_t _stage
 			, TextureHandle _handle
@@ -1589,6 +1628,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_dispatch`.
 		///
+BGFX_SHARED_LIB_API
 		void dispatch(
 			  ViewId _id
 			, ProgramHandle _handle
@@ -1609,6 +1649,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_dispatch_indirect`.
 		///
+BGFX_SHARED_LIB_API
 		void dispatch(
 			  ViewId _id
 			, ProgramHandle _handle
@@ -1624,6 +1665,7 @@ namespace bgfx
 		///
 		/// @attention C99 equivalent is `bgfx_encoder_discard`.
 		///
+BGFX_SHARED_LIB_API
 		void discard(uint8_t _flags = BGFX_DISCARD_ALL);
 
 		/// Blit texture 2D region between two 2D textures.
@@ -1642,6 +1684,7 @@ namespace bgfx
 		/// @attention Availability depends on: `BGFX_CAPS_TEXTURE_BLIT`.
 		/// @attention C99 equivalent is `bgfx_encoder_blit`.
 		///
+BGFX_SHARED_LIB_API
 		void blit(
 			  ViewId _id
 			, TextureHandle _dst
@@ -1680,6 +1723,7 @@ namespace bgfx
 		/// @attention Availability depends on: `BGFX_CAPS_TEXTURE_BLIT`.
 		/// @attention C99 equivalent is `bgfx_encoder_blit`.
 		///
+BGFX_SHARED_LIB_API
 		void blit(
 			  ViewId _id
 			, TextureHandle _dst
@@ -2009,10 +2053,12 @@ BGFX_SHARED_LIB_API
 	///
 	/// @param[in] _forThread Explicitly request an encoder for a worker thread.
 	///
+BGFX_SHARED_LIB_API
 	Encoder* begin(bool _forThread = false);
 
 	/// End submitting draw calls from thread.
 	///
+BGFX_SHARED_LIB_API
 	void end(Encoder* _encoder);
 
 	/// Advance to next frame. When using multithreaded renderer, this call
